@@ -1,2 +1,2 @@
 # rex-player
-Fee media center / player
+Free media center / player
