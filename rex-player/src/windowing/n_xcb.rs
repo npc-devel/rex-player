@@ -1,5 +1,7 @@
-use xcb::{x,Connection,Request,Xid};
-use xcb::x::{Drawable, Gc, Gcontext};
+use xcb::{x, Connection, Event, Request, Xid};
+use xcb::Event::X;
+use xcb::x::{Cw, Drawable, Gc, Gcontext};
+use xcb::x::Event::Expose;
 
 include!("n_req.rs");
 include!("n_sprite.rs");
@@ -27,8 +29,109 @@ struct Nxcb {
     drawable: Drawable
 }
 
-impl Nxcb {
+//impl Clone for Nxcb {
+    /*fn clone(&self) -> Self {
+        unsafe {
+            Self {
+                depth: self.depth,
+                atoms: self.atoms.clone(),
+                conn: xcb::Connection::from_raw_conn(self.conn.get_raw_conn()),
+                screen_n: self.screen_n,
+                visual_id: self.visual_id,
+                root: self.root,
+                gc: x::Gcontext::none(),
+                drawable: Drawable::None
+            }
+        }
+    }
+}*/
 
+struct Nevent {
+    code: i32,
+    window: x::Window,
+    x:i16,y:i16,width:u16,height:u16
+}
+impl Nevent {
+    pub const UNKNOWN:i32 = -1;
+    pub const NONE:i32 = 0;
+    pub const RENDER:i32 = 1;
+    pub const B_DOWN:i32 = 2;
+    pub const B_UP:i32 = 4;
+    pub const RESIZE:i32 = 8;
+    pub const MOTION:i32 = 16;
+    pub fn new()->Self {
+        Self {
+            code: Self::NONE,
+            window: x::Window::none(),
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0
+        }
+    }
+}
+
+impl Nxcb {
+    pub fn wait_event(& self) -> Nevent {
+        let mut ret = Nevent::new();
+        let evento = self.conn.poll_for_event().unwrap();
+        if evento.is_none() {
+            return ret
+        }
+        let event = evento.unwrap();/* {
+            Err(xcb::Error::Connection(xcb::ConnError::Connection)) => {
+                // graceful shutdown, likely "x" close button clicked in title bar
+                panic!("unexpected error");            }
+            Err(err) => {
+                panic!("unexpected error: {:#?}", err);
+            }
+            Ok(event) => event,
+        };*/
+        match event {
+            xcb::Event::Present(xcb::present::Event::ConfigureNotify(event))=> {
+                ret.window = event.window();
+                ret.width = event.width();
+                ret.height = event.height();
+                ret.code = Nevent::RESIZE;
+                ret
+            }
+            /*xcb::Event::X(x::Event::MotionNotify(ev))=> {
+                let win = ev.event();
+                let bid = self.built.get(&win);
+                if bid.is_none() { (-1, x::Window::none(), 0, 0) }
+                else {
+                    let mut parm:i64 = ev.event_x() as i64;
+                    parm = parm << 32;
+                    parm = parm | (ev.event_y() as i64);
+                    //println!("{parm}");
+                    (Self::MOTION, win, *bid.unwrap(), parm)
+                }
+            }*/
+            X(Expose(event))=>{
+                //   let win = event.window();
+                ret.window = event.window();
+                ret.code = Nevent::RENDER;
+                ret
+            }/*
+            X(Event::ButtonPress(event))=>{
+                let win = event.event();
+                let bid = self.built[&win];
+
+                (Self::B_DOWN, win, bid, event.detail() as i64)
+            }*/
+            X(x::Event::ButtonRelease(event))=>{
+                ret.window = event.event();
+                ret.x = event.event_x();
+                ret.y = event.event_y();
+                ret.code = Nevent::B_UP;
+                ret
+            }
+            _ => {
+                ret.code = Nevent::UNKNOWN;
+                ret
+            }
+        }
+    }
     pub fn prepare(&mut self) {
       //  self.gfx_ctx = Nreq::new_gc(self,Drawable::Window(self.root));
     //    self.drawable = Drawable::Window(self.root);
@@ -48,16 +151,7 @@ impl Nxcb {
             visual_id,
             root,
             gc: x::Gcontext::none(),
-            drawable: Drawable::None,
-            //ev_x:0,ev_y:0,
-            //ev_width:0,
-            //ev_height:0,
-            //ev_window: x::Window::none(),
-            //build_f: vec![],
-            //built: HashMap::new(),
-            // built_r: HashMap::new(),
-           // app_w: x::Window::none(),
-         //   icon_cache: HashMap::new()
+            drawable: Drawable::None
         }
     }
     fn new_id<T: xcb::Xid + xcb::XidNew>(&self)->T {
@@ -101,20 +195,26 @@ impl Nxcb {
             value_list: &[x::ConfigWindow::X(x as i32),x::ConfigWindow::Y(y as i32)]
         });
     }
+    pub fn request_redraw(&self,win:x::Window,x:u16,y:u16,w:u16,h:u16) {
+        let event = x::ExposeEvent::new(win,x,y,w,h,1);
+        self.request(&x::SendEvent {
+            propagate: false,
+            destination: x::SendEventDest::Window(win),
+            event_mask: x::EventMask::EXPOSURE,
+            event: &event,
+        });
+    }
     pub fn size(&self,window:x::Window,width:u16,height:u16) {
         self.request(&x::ConfigureWindow {
             window,
             value_list: &[x::ConfigWindow::Width(width as u32),x::ConfigWindow::Height(height as u32)]
         });
     }
-    pub fn bgc(&self,window:x::Window,bg:u32) {
-       /* self.request(&x::ChangeProperty {
-            mode: PropMode::Replace,
-            window,
-            property: (),
-            r#type: (),
-            data: &[],
-        });*/
+    pub fn bg(&self,window:x::Window,bg:u32) {
+       self.request(&x::ChangeWindowAttributes {
+           window,
+           value_list: &[Cw::BackPixel(bg)]
+       });
     }
     pub fn fill(&self,gc:Gcontext,drawable:Drawable,b:&[u8],dst_x:i16,dst_y:i16,width:u16,height:u16){
         self.request(&x::PutImage {

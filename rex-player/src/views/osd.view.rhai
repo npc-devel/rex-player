@@ -1,2 +1,3 @@
-<media w=100px h=100px></>
-<media b=p.b w=100pw h=100ph></>
+<media w=50pw h=50ph></>
+<media t=50ph l=50pw w=50pw h=50ph></>
+<i>bars</>

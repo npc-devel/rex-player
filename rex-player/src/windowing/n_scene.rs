@@ -65,6 +65,7 @@ struct Nvisual {
     y:i16,
     width:u16,
     height:u16,
+    buf: x::Pixmap,
     window: x::Window,
     bg: u32
 }
@@ -78,8 +79,8 @@ impl Nscene {
         let u = &def[l-2..l];
         let s = str::parse::<u16>(&def[0..l-2]).unwrap();
         match u {
-            "pw" => mw,
-            "ph" => mh,
+            "pw" => s*mw/100,
+            "ph" => s*mh/100,
             _ => s
         }
     }
@@ -102,8 +103,11 @@ impl Nscene {
                 let v = visuals.get_mut(&n.id).unwrap();
 
                 for a in n.attrs.iter() {
-                    let aa = a.1.split('.').into_iter().collect::<Vec<&str>>();
+                    let aa = a.1.split("->").into_iter().collect::<Vec<&str>>();
                     match a.0.as_str() {
+                        "bg" => {
+                            ctx.bg(v.window,u32::from_str_radix(&a.1, 16).unwrap());
+                        }
                         "w" => {
                             v.width = Self::calc(&a.1,vp.width,vp.height)
                         }
@@ -111,30 +115,41 @@ impl Nscene {
                             v.height = Self::calc(&a.1,vp.width,vp.height)
                         }
                         "l" => {
-                            v.x = Self::anchor(&aa[1],vp.width);
+                            if aa.len()>1 {
+                                v.x = Self::anchor(&aa[1], vp.width);
+                            } else {
+                                v.x = Self::calc(&a.1,vp.width,vp.height) as i16;
+                            }
                         }
                         "r" => {
-                            v.x = Self::anchor(&aa[1],vp.width) - v.width as i16;
+                            if aa.len()>1 {
+                                v.x = Self::anchor(&aa[1],vp.width) - v.width as i16;
+                            } else {
+                                v.x = Self::calc(&a.1,vp.width,vp.height) as i16 - v.width as i16;
+                            }
                         }
                         "t" => {
-                            v.y = Self::anchor(&aa[1],vp.height);
+                            if aa.len()>1 {
+                                v.y = Self::anchor(&aa[1],vp.height);
+                            } else {
+                                v.y = Self::calc(&a.1,vp.width,vp.height) as i16;
+                            }
                         }
                         "b" => {
-                            v.y = Self::anchor(&aa[1],vp.height) - v.height as i16;
+                            if aa.len()>1 {
+                                v.y = Self::anchor(&aa[1],vp.height) - v.height as i16;
+                            } else {
+                                v.y = Self::calc(&a.1,vp.width,vp.height) as i16 - v.height as i16;
+                            }
                         }
                         _ => {}
                     }
                 }
                 ctx.pos(v.window,v.x,v.y);
                 ctx.size(v.window,v.width,v.height);
-              //  if n.tag == "media" {
-                //    le/t w = v.window;
-                    /*thread::spawn(|| {
-                        let mut cs = Nxcb::new();
-                        Lffmpeg::stream_file(ctx, Drawable::Window(w), "/home/ppc/Videos/Samples/50MB_1080P_THETESTDATA.COM_mp4_new.mp4").expect("Bad file");
-                    });*/
-               // }
-
+                if n.tag == "media" {
+                    v.buf = Nreq::new_pixmap(ctx,v.width,v.height);
+                }
             },visuals);
         }
     }
@@ -153,8 +168,9 @@ impl Nscene {
             key: self.root.id,
             x: 0,
             y: 0,
-            width: 48,
-            height: 48,
+            width: 64,
+            height: 64,
+            buf: x::Pixmap::none(),
             window:x::Window::none(),
             bg: 0xFF222222
         });
@@ -168,8 +184,9 @@ impl Nscene {
                     key: n.id,
                     x: 0,
                     y: 0,
-                    width: 48,
-                    height: 48,
+                    width: 64,
+                    height: 64  ,
+                    buf:x::Pixmap::none(),
                     window,
                     bg
                 });

@@ -23,7 +23,7 @@ impl Lffmpeg {
     fn render_frame(&self, rgb_frame:&Video, frame_index:u64, app:&Napp) {
 
     }
-    fn stream_file(ctx:&mut Nxcb,drawable:Drawable,file:&str) -> Result<(),ffmpeg::Error> {
+    fn stream_file(ctx:&Nxcb,buf:Drawable,win:Drawable,dst_w:u32,dst_h:u32,file:&str) -> Result<(),ffmpeg::Error> {
         ffmpeg::init().unwrap();
      //   let spr = Nsprite::new(&app.ctx,"jumbo");
         if let Ok(mut ictx) = input(file) {
@@ -41,8 +41,8 @@ impl Lffmpeg {
                 decoder.width(),
                 decoder.height(),
                 Pixel::BGRA,
-                1280,
-                720,
+                dst_w,
+                dst_h,
                 Flags::BILINEAR,
             )?;
 
@@ -78,8 +78,8 @@ impl Lffmpeg {
                         let mut rgb_frame = Video::empty();
                         scaler.run(&decoded, &mut rgb_frame)?;
 
-                        ctx.fill(ctx.gc,drawable, &rgb_frame.data(0),0,0,1280,720);
-                     //   ctx.copy(ctx.gc,fbo_d, app_d,0,0,0,0,1280,720);
+                        ctx.fill(ctx.gc,buf, &rgb_frame.data(0),0,0,dst_w as u16,dst_h as u16);
+                        ctx.copy(ctx.gc,buf, win,0,0,0,0,dst_w as u16,dst_h as u16);
                      //   ctx.copy(ctx.gc,fbo_d, ctl_d,0,0,0,0,96,96);
                     //    ctx.copy(cgc,img_d, ctl_d,0,0,0,0,96,96);
                       /*  ctx.request(&x::PutImage {
@@ -125,7 +125,7 @@ impl Lffmpeg {
                             src_y: 0,
                             dst_x: 0,
                             dst_y: 0,
-                            width: 96,
+                            width: 96,F
                             height: 96,
                         });
 

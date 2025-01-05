@@ -5,7 +5,7 @@ struct Nreq {
 }
 
 impl Nreq {
-    fn new_mask(ctx:&Nxcb,file:&str)->x::Pixmap {
+    fn new_mask(ctx:&Nxcb,file:&str,inverted:bool)->x::Pixmap {
         let img = image::open(asset!(file,"png")).unwrap().to_rgba8();
         let width = img.width() as u16;
         let height = img.height() as u16;
@@ -21,14 +21,14 @@ impl Nreq {
             height
         });
 
-        let mut pi = 0;
-        let mut b: Vec<bool> = vec![];
+      //  let mut pi = 0;
+   //     let mut b: Vec<bool> = vec![];
         let mut u: Vec<u8> = vec![];
      //   let mut pixels = img.pi ;
         let allp : i16 = (height*paddedw) as i16;
-        let mut tb:u8 = 0;
+        let mut tb: u8 = 0;
         let mut ix: u32 = 0;
-        let mut iy:u32 = 0;
+        let mut iy: u32 = 0;
         for i in 0..allp {
             if ((i-8) % 8) == 0 {
                 u.push(tb);
@@ -36,7 +36,10 @@ impl Nreq {
             }
             ix+=1;
             if ix == (paddedw as u32) { ix = 0; iy+=1 }
-            if ix<(width as u32) && iy<(height as u32) && img.get_pixel(ix,iy).0[3] >127 { tb = tb | 1<<(i%8) as u8 };
+            if ix<(width as u32) && iy<(height as u32) {
+                if  (!inverted && img.get_pixel(ix,iy).0[3]>127) ||
+                    (inverted && img.get_pixel(ix,iy).0[3]<127) { tb = tb | 1<<(i%8) as u8 }
+            }
         }
         ctx.request(&x::PutImage{
             format: ImageFormat::ZPixmap,
@@ -180,7 +183,7 @@ impl Nreq {
             border_width: 0,
             class: x::WindowClass::CopyFromParent,
             visual: ctx.visual_id,
-            value_list: &[x::Cw::BackPixel(bg),x::Cw::EventMask(x::EventMask::OWNER_GRAB_BUTTON | x::EventMask::EXPOSURE | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
+            value_list: &[x::Cw::BackPixel(bg), x::Cw::EventMask(x::EventMask::OWNER_GRAB_BUTTON | x::EventMask::EXPOSURE | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
         });
         window
     }
