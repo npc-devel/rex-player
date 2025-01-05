@@ -33,10 +33,11 @@ impl Napp {
     fn run(&mut self) {
         let mut sce = Nscene::new("osd.view");
         let mut visuals= sce.build_in(&mut self.ctx,self.window);
-        sce.anchor_fit_to(&mut self.ctx,0,0,1280,720,&mut visuals);
-        let mut medias: idvec!() = sce.select("media");
 
-        thread::scope(|s|{
+        sce.anchor_fit_to(&mut self.ctx,0,0,1280,720,&mut visuals);
+
+        let mut medias: idvec!() = sce.select("media");
+       thread::scope(|s|{
             let mut ctx = &self.ctx;
             for mi in &medias {
                 let m = visuals.get(&mi).unwrap();
@@ -45,26 +46,36 @@ impl Napp {
                 });
             }
 
-            let mut icons: idvec!() = sce.select("i");
-            let mask = Nreq::new_mask(ctx,"circle",true);
-            let cgc = Nreq::new_masked_gc(ctx, Drawable::Window(self.window), mask);
-         //   let m = visuals.get(&medias.first().unwrap()).unwrap();
-           // let t = visuals.get(icons.first().unwrap()).unwrap();
+        let mut visuals_by_window :HashMap<x::Window,&Nvisual> = nmap!();
+        for v in visuals.iter() {
+            visuals_by_window.insert(v.1.window,&v.1);
+        }
+
+
+        let mut icons: idvec!() = sce.select("i");
+
             loop {
-                for i in &icons {
-                    let vi = visuals.get(&i).unwrap();
-                    ctx.copy(cgc,Drawable::Pixmap(visuals[&medias[0]].buf),Drawable::Window(vi.window),0,0,0,0,64,64);
+                if !medias.is_empty() {
+                    for i in &icons {
+                        let vi = visuals.get(&i).unwrap();
+                        let cgc = Nreq::new_masked_gc(ctx, Drawable::Window(self.window), vi.mask);
+                        ctx.copy(cgc, Drawable::Pixmap(visuals[&medias[0]].buf), Drawable::Window(vi.window), 0, 0, 0, 0, 64, 64);
+                    }
                 }
                 let ev = ctx.wait_event();
                 match ev.code {
                     Nevent::RENDER => {
-                        let me: u64 = *sce.select(&ev.window.resource_id().to_string()).first().unwrap_or(&0);
-                    }
+                        let vio = visuals_by_window.get(&ev.window);
+                        if vio.is_some() {
+                            let vi = vio.unwrap();
+                            ctx.copy(ctx.gc, Drawable::Pixmap(vi.buf), Drawable::Window(vi.window), 0, 0, 8, 0, vi.width, vi.height);
+                        }
+                        }
                     _ => {}
                 }
                 self.idle();
             }
-        });
+       });
       //  let dlg = Nreq::new_sub_window(&self.win_ctx,self.window,0xFF001100);
       //  ctx.show(self.window);
         //let vid = l_ffmpeg::new(Drawable::Window(dlg));

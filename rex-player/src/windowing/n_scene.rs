@@ -65,6 +65,7 @@ struct Nvisual {
     y:i16,
     width:u16,
     height:u16,
+    mask: x::Pixmap,
     buf: x::Pixmap,
     window: x::Window,
     bg: u32
@@ -103,7 +104,7 @@ impl Nscene {
                 let v = visuals.get_mut(&n.id).unwrap();
 
                 for a in n.attrs.iter() {
-                    let aa = a.1.split("->").into_iter().collect::<Vec<&str>>();
+                    let aa = a.1.split(".").into_iter().collect::<Vec<&str>>();
                     match a.0.as_str() {
                         "bg" => {
                             ctx.bg(v.window,u32::from_str_radix(&a.1, 16).unwrap());
@@ -119,6 +120,20 @@ impl Nscene {
                                 v.x = Self::anchor(&aa[1], vp.width);
                             } else {
                                 v.x = Self::calc(&a.1,vp.width,vp.height) as i16;
+                            }
+                        }
+                        "c" => {
+                            if aa.len()>1 {
+                                v.y = Self::anchor(&aa[1], vp.height) - v.height as i16/2;;
+                            } else {
+                                v.y = Self::calc(&a.1,vp.width,vp.height) as i16 - v.height as i16/2;
+                            }
+                        }
+                        "m" => {
+                            if aa.len()>1 {
+                                v.x = Self::anchor(&aa[1], vp.width) - v.width as i16/2;;
+                            } else {
+                                v.x = Self::calc(&a.1,vp.width,vp.height) as i16 - v.width as i16/2;
                             }
                         }
                         "r" => {
@@ -147,9 +162,17 @@ impl Nscene {
                 }
                 ctx.pos(v.window,v.x,v.y);
                 ctx.size(v.window,v.width,v.height);
-                if n.tag == "media" {
-                    v.buf = Nreq::new_pixmap(ctx,v.width,v.height);
+                match n.tag.as_str() {
+                    "i" => {
+                        v.mask = Nreq::new_mask(ctx,&n.content,true);
+                        v.buf = Nreq::new_img_backgrounded(ctx,&n.content,v.bg);
+                    }
+                    "media" => {
+                        v.buf = Nreq::new_pixmap(ctx,v.width,v.height);
+                    }
+                    _ => {}
                 }
+
             },visuals);
         }
     }
@@ -170,6 +193,7 @@ impl Nscene {
             y: 0,
             width: 64,
             height: 64,
+            mask: x::Pixmap::none(),
             buf: x::Pixmap::none(),
             window:x::Window::none(),
             bg: 0xFF222222
@@ -186,6 +210,7 @@ impl Nscene {
                     y: 0,
                     width: 64,
                     height: 64  ,
+                    mask:x::Pixmap::none(),
                     buf:x::Pixmap::none(),
                     window,
                     bg
