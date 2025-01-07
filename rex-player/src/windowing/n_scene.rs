@@ -65,6 +65,7 @@ struct Nvisual {
     y:i16,
     width:u16,
     height:u16,
+    inv_mask: x::Pixmap,
     mask: x::Pixmap,
     buf: x::Pixmap,
     window: x::Window,
@@ -78,11 +79,11 @@ impl Nscene {
     fn calc(def:&str,mw:u16,mh:u16)->u16 {
         let l = def.len();
         let u = &def[l-2..l];
-        let s = str::parse::<u16>(&def[0..l-2]).unwrap();
+        let s:u32 = str::parse::<u32>(&def[0..l-2]).unwrap();
         match u {
-            "pw" => s*mw/100,
-            "ph" => s*mh/100,
-            _ => s
+            "pw" => (s*mw as u32/100) as u16,
+            "ph" => (s*mh as u32/100) as u16,
+            _ => s as u16
         }
     }
     fn anchor(def:&str,max:u16)->i16 {
@@ -92,7 +93,7 @@ impl Nscene {
             _ => max as i16
         }
     }
-    pub fn anchor_fit_to(&mut self, ctx:&mut Nxcb, x:i16, y:i16, width:u16, height:u16,visuals:&mut vismap!()) {
+    pub fn anchor_fit_to(&mut self, ctx:&Nxcb, x:i16, y:i16, width:u16, height:u16,visuals:&mut vismap!()) {
         let v = visuals.get_mut(&self.root.id).unwrap();
         v.x = x;
         v.y = y;
@@ -164,8 +165,9 @@ impl Nscene {
                 ctx.size(v.window,v.width,v.height);
                 match n.tag.as_str() {
                     "i" => {
-                        v.mask = Nreq::new_mask(ctx,&n.content,true);
-                        v.buf = Nreq::new_img_backgrounded(ctx,&n.content,v.bg);
+                        v.mask = Nreq::new_mask(ctx, &n.content, false, v.width as i16, v.height as i16);
+                        v.inv_mask = Nreq::new_mask(ctx, &n.content, true, v.width as i16, v.height as i16);
+                        v.buf = Nreq::new_img_backgrounded(ctx,&n.content,v.width as i16, v.height as i16,v.bg);
                     }
                     "media" => {
                         v.buf = Nreq::new_pixmap(ctx,v.width,v.height);
@@ -193,6 +195,7 @@ impl Nscene {
             y: 0,
             width: 64,
             height: 64,
+            inv_mask:x::Pixmap::none(),
             mask: x::Pixmap::none(),
             buf: x::Pixmap::none(),
             window:x::Window::none(),
@@ -209,7 +212,8 @@ impl Nscene {
                     x: 0,
                     y: 0,
                     width: 64,
-                    height: 64  ,
+                    height: 64,
+                    inv_mask:x::Pixmap::none(),
                     mask:x::Pixmap::none(),
                     buf:x::Pixmap::none(),
                     window,

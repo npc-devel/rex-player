@@ -1,14 +1,21 @@
 use image::GenericImageView;
+use image::imageops::FilterType;
 
 struct Nreq {
 
 }
 
 impl Nreq {
-    fn new_mask(ctx:&Nxcb,file:&str,inverted:bool)->x::Pixmap {
-        let img = image::open(asset!(file,"png")).unwrap().to_rgba8();
-        let width = img.width() as u16;
-        let height = img.height() as u16;
+    fn new_mask(ctx:&Nxcb,file:&str,inverted:bool,nw:i16,nh:i16)->x::Pixmap {
+        let mut img = image::open(asset!(file,"png")).unwrap();
+        let mut width = img.width() as u16;
+        let mut height = img.height() as u16;
+        if nw > - 1  || nh > -1 {
+            width = nw as u16;
+            height = nh as u16;
+            img = img.resize_to_fill(width as u32,height as u32,FilterType::Triangle);
+        }
+        let img = img.to_rgba8();
         let pad = (32 - (width % 32))%32;
         let paddedw = width + pad;
 
@@ -21,26 +28,28 @@ impl Nreq {
             height
         });
 
-      //  let mut pi = 0;
-   //     let mut b: Vec<bool> = vec![];
         let mut u: Vec<u8> = vec![];
-     //   let mut pixels = img.pi ;
         let allp : i16 = (height*paddedw) as i16;
         let mut tb: u8 = 0;
         let mut ix: u32 = 0;
         let mut iy: u32 = 0;
+        let xo: i32 = 0;
         for i in 0..allp {
-            if ((i-8) % 8) == 0 {
+            let sx = ix as i32 + xo;
+            if sx>-1 && sx < (width as i32) && iy < (height as u32) {
+                if  (!inverted && img.get_pixel(sx as u32,iy).0[3]>127) ||
+                    (inverted && img.get_pixel(sx as u32,iy).0[3]<127) { tb = tb | 1<<(i%8) as u8 }
+            } else {
+                if inverted { tb = tb | 1<<(i%8) as u8 }
+            }
+            ix+=1;
+            if ix>0 && (ix % 8) == 0 {
                 u.push(tb);
                 tb = 0;
             }
-            ix+=1;
-            if ix == (paddedw as u32) { ix = 0; iy+=1 }
-            if ix<(width as u32) && iy<(height as u32) {
-                if  (!inverted && img.get_pixel(ix,iy).0[3]>127) ||
-                    (inverted && img.get_pixel(ix,iy).0[3]<127) { tb = tb | 1<<(i%8) as u8 }
-            }
+            if ix == paddedw as u32 { ix = 0; iy+=1 }
         }
+
         ctx.request(&x::PutImage{
             format: ImageFormat::ZPixmap,
             depth: 1,
@@ -55,10 +64,17 @@ impl Nreq {
         });
         pix
     }
-    fn new_img(ctx:&Nxcb,file:&str)->x::Pixmap {
-        let img = image::open(asset!(file,"png")).unwrap().to_rgba8();
-        let width = img.width() as u16;
-        let height = img.height() as u16;
+    fn new_img(ctx:&Nxcb,file:&str,nw:i16,nh:i16)->x::Pixmap {
+        let mut img = image::open(asset!(file,"png")).unwrap();
+        let mut width = img.width() as u16;
+        let mut height = img.height() as u16;
+
+        if nw > - 1  || nh > -1 {
+            width = nw as u16;
+            height = nh as u16;
+            img = img.resize_to_fill(width as u32,height as u32,FilterType::Triangle);
+        }
+        let img = img.to_rgba8();
 
         let pix:x::Pixmap = ctx.new_id::<x::Pixmap>();
         ctx.request(&x::CreatePixmap{
@@ -83,11 +99,17 @@ impl Nreq {
         });
         pix
     }
-    fn new_img_backgrounded(ctx:&Nxcb,file:&str,bg:u32)->x::Pixmap {
-        let mut img = image::open(asset!(file,"png")).unwrap().to_rgba8();
-        let width = img.width() as u16;
-        let height = img.height() as u16;
+    fn new_img_backgrounded(ctx:&Nxcb,file:&str,nw:i16,nh:i16,bg:u32)->x::Pixmap {
+        let mut img = image::open(asset!(file,"png")).unwrap();
+        let mut width = img.width() as u16;
+        let mut height = img.height() as u16;
 
+        if nw > - 1  || nh > -1 {
+            width = nw as u16;
+            height = nh as u16;
+            img = img.resize_to_fill(width as u32,height as u32,FilterType::Triangle);
+        }
+        let mut img = img.to_rgba8();
         let pix:x::Pixmap = ctx.new_id::<x::Pixmap>();
         ctx.request(&x::CreatePixmap{
             depth: 24,
@@ -149,6 +171,7 @@ impl Nreq {
             visual: ctx.visual_id,
             value_list: &[x::Cw::BackPixel(bg),x::Cw::EventMask(x::EventMask::OWNER_GRAB_BUTTON | x::EventMask::EXPOSURE | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
         });
+        ctx.select_input_cfg(window);
         ctx.drawable = Drawable::Window(window);
         ctx.gc = Nreq::new_gc(&ctx,ctx.drawable);
         window
@@ -205,21 +228,4 @@ impl Nreq {
         });
         oid
     }
-  /*  fn opacity(ctx:&Nxcb,window:x::Window) {
-        let data :u32 = 0xFFFFFFFF/2;
-        //       double alpha = 0.8;
-        //     unsigned long opacity = (unsigned long)(0xFFFFFFFFul * alpha);
-        //   Atom XA_NET_WM_WINDOW_OPACITY = XInternAtom(display, "_NET_WM_WINDOW_OPACITY", False);
-        ctx.request(&x::ChangeProperty{
-            mode: x::PropMode::Replace,
-            window,
-            property: ctx.atoms.wm_opacity,
-            r#type: x::ATOM_CARDINAL,
-            data: &data.to_be_bytes().as_ref()
-        });
-
-        // XChangeProperty(display, win, XA_NET_WM_WINDOW_OPACITY, XA_CARDINAL, 32,
-        //                PropModeReplace, (unsigned char *)&opacity, 1L);
-    }*/
-
 }

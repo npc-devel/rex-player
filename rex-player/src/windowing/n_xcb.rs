@@ -74,11 +74,11 @@ impl Nevent {
 impl Nxcb {
     pub fn wait_event(& self) -> Nevent {
         let mut ret = Nevent::new();
-        let evento = self.conn.poll_for_event().unwrap();
-        if evento.is_none() {
+        let evento = self.conn.poll_for_event();
+        if evento.is_err() {
             return ret
         }
-        let event = evento.unwrap();/* {
+        let event = evento.unwrap().unwrap();/* {
             Err(xcb::Error::Connection(xcb::ConnError::Connection)) => {
                 // graceful shutdown, likely "x" close button clicked in title bar
                 panic!("unexpected error");            }
@@ -95,7 +95,7 @@ impl Nxcb {
                 ret.code = Nevent::RESIZE;
                 ret
             }
-            /*xcb::Event::X(x::Event::MotionNotify(ev))=> {
+         /*   xcb::Event::X(x::Event::MotionNotify(ev))=> {
                 let win = ev.event();
                 let bid = self.built.get(&win);
                 if bid.is_none() { (-1, x::Window::none(), 0, 0) }
@@ -104,11 +104,10 @@ impl Nxcb {
                     parm = parm << 32;
                     parm = parm | (ev.event_y() as i64);
                     //println!("{parm}");
-                    (Self::MOTION, win, *bid.unwrap(), parm)
+                    (Nevent::MOTION, win, *bid.unwrap(), parm)
                 }
             }*/
             X(Expose(event))=>{
-                //   let win = event.window();
                 ret.window = event.window();
                 ret.code = Nevent::RENDER;
                 ret
