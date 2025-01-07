@@ -74,21 +74,17 @@ impl Nevent {
 impl Nxcb {
     pub fn wait_event(& self) -> Nevent {
         let mut ret = Nevent::new();
-        let evento = self.conn.poll_for_event();
-        if evento.is_err() {
+        let eventr = self.conn.poll_for_event();
+        if eventr.is_err() {
             return ret
         }
-        let event = evento.unwrap().unwrap();/* {
-            Err(xcb::Error::Connection(xcb::ConnError::Connection)) => {
-                // graceful shutdown, likely "x" close button clicked in title bar
-                panic!("unexpected error");            }
-            Err(err) => {
-                panic!("unexpected error: {:#?}", err);
-            }
-            Ok(event) => event,
-        };*/
+        let evento = eventr.unwrap();
+        if evento.is_none() {
+            return ret
+        }
+        let event = evento.unwrap();
         match event {
-            xcb::Event::Present(xcb::present::Event::ConfigureNotify(event))=> {
+            Event::Present(xcb::present::Event::ConfigureNotify(event))=> {
                 ret.window = event.window();
                 ret.width = event.width();
                 ret.height = event.height();
@@ -203,12 +199,13 @@ impl Nxcb {
             event: &event,
         });
     }
-    pub fn size(&self,window:x::Window,width:u16,height:u16) {
+    pub fn size(&self,window:x::Window ,width:u16,height:u16) {
         self.request(&x::ConfigureWindow {
             window,
             value_list: &[x::ConfigWindow::Width(width as u32),x::ConfigWindow::Height(height as u32)]
         });
     }
+
     pub fn bg(&self,window:x::Window,bg:u32) {
        self.request(&x::ChangeWindowAttributes {
            window,

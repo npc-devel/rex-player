@@ -19,10 +19,10 @@ impl Nnode {
             c.select(sel,self,func,results);
         }
     }
-    pub fn traverse<F: Fn(&Nnode,&Nnode,&mut vismap!())->()>(&self, parent:&Nnode, func: &F, visuals:&mut vismap!()) {
-        func(self,parent,visuals);
+    pub fn traverse<F: Fn(&Nnode,&Nnode,&mut resmap!(),&mut winmap!(),&mut vismap!())->()>(&self, parent:&Nnode, func: &F,resmap:&mut resmap!(),ids:&mut winmap!(), visuals:&mut vismap!()) {
+        func(self,parent,resmap,ids,visuals);
         for c in self.children.iter() {
-            c.traverse(self,func,visuals);
+            c.traverse(self,func,resmap,ids,visuals);
         }
     }
     pub fn new(v: &mut JsonValue) -> Self {
@@ -72,7 +72,10 @@ struct Nvisual {
     bg: u32
 }
 struct Nscene {
-    root: Nnode
+    root: Nnode,
+    window_ids: HashMap<x::Window, u64>,
+    controls: vismap!(),
+    resmap: resmap!()
 }
 
 impl Nscene {
@@ -93,14 +96,15 @@ impl Nscene {
             _ => max as i16
         }
     }
-    pub fn anchor_fit_to(&mut self, ctx:&Nxcb, x:i16, y:i16, width:u16, height:u16,visuals:&mut vismap!()) {
+    pub fn anchor_fit_to(&mut self, ctx:&Nxcb, x:i16, y:i16, width:u16, height:u16) {
+        let visuals = &mut self.controls;;
         let v = visuals.get_mut(&self.root.id).unwrap();
         v.x = x;
         v.y = y;
         v.width = width;
         v.height = height;
         for c in &self.root.children {
-            c.traverse(&self.root, &|n: &Nnode, p: & Nnode,visuals:&mut vismap!() | {
+            c.traverse(&self.root, &|n, p,resmap,ids,visuals| {
                 let vp = visuals.get_mut(&p.id).unwrap().clone();
                 let v = visuals.get_mut(&n.id).unwrap();
 
@@ -163,6 +167,7 @@ impl Nscene {
                 }
                 ctx.pos(v.window,v.x,v.y);
                 ctx.size(v.window,v.width,v.height);
+                ctx.show(v.window);
                 match n.tag.as_str() {
                     "i" => {
                         v.mask = Nreq::new_mask(ctx, &n.content, false, v.width as i16, v.height as i16);
@@ -170,12 +175,17 @@ impl Nscene {
                         v.buf = Nreq::new_img_backgrounded(ctx,&n.content,v.width as i16, v.height as i16,v.bg);
                     }
                     "media" => {
-                        v.buf = Nreq::new_pixmap(ctx,v.width,v.height);
+                        let map = Nreq::new_pixmap(ctx, v.width, v.height);
+                        if v.buf != x::Pixmap::none() {
+                            resmap.remove(&v.buf.resource_id());
+                        }
+                        v.buf = map;
+                        resmap.insert(v.buf.resource_id(),map);
                     }
                     _ => {}
                 }
 
-            },visuals);
+            },&mut self.resmap,&mut self.window_ids,visuals);
         }
     }
     pub fn select(&mut self, sel:&str)->idvec!(){
@@ -187,8 +197,8 @@ impl Nscene {
         }
         results
     }
-    pub fn build_in(&mut self, ctx:&mut Nxcb, win:x::Window)->vismap!(){
-        let mut visuals: vismap!() = HashMap::new();
+    pub fn build_in(&mut self, ctx:&Nxcb, win:x::Window) {
+        let visuals = &mut self.controls;;
         visuals.insert(self.root.id, Nvisual {
             key: self.root.id,
             x: 0,
@@ -202,11 +212,12 @@ impl Nscene {
             bg: 0xFF222222
         });
         for c in &self.root.children {
-            c.traverse(&self.root,&|n:&Nnode,p:& Nnode,visuals  | {
+            c.traverse(&self.root,&|n,p,resmap,ids,visuals  | {
                 let mut bg = 0xFF222255;
                 if n.attrs.contains_key("bg") { bg = u32::from_str_radix(&n.attrs["bg"],16).unwrap(); }
                 let window = Nreq::new_sub_window(ctx, win, bg);
-                ctx.show(window);
+               // ctx.show(window);
+                ids.insert(window,n.id);
                 visuals.insert(n.id, Nvisual {
                     key: n.id,
                     x: 0,
@@ -219,9 +230,15 @@ impl Nscene {
                     window,
                     bg
                 });
-            },&mut visuals);
+            },&mut self.resmap,&mut self.window_ids,visuals);
         }
-        visuals
+    }
+    pub fn build(file:&str,ctx:&Nxcb,window:x::Window,w:u16,h:u16)-> Self {
+        let mut ret = Self::new(file);
+        let mut controls = ret.build_in(ctx,window);
+        ret.anchor_fit_to(ctx,0,0,w,h);
+
+        ret
     }
     pub fn new(file:&str)-> Self {
         let raw = view!(file,"rhai");
@@ -232,7 +249,10 @@ impl Nscene {
         let root = Nnode::new(&mut dom);
         //print!("nodes: {:?}", dnode);
         Self {
-            root
+            root,
+            controls:nmap!(),
+            resmap:nmap!(),
+            window_ids:nmap!()
         }
     }
     fn process(raw:&str)->String {
