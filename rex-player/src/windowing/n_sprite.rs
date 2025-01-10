@@ -1,5 +1,4 @@
-use image::{DynamicImage, Rgba, ImageReader, EncodableLayout};
-use xcb::x::ImageFormat;
+
 
 struct Nsprite {
     pix: x::Pixmap,

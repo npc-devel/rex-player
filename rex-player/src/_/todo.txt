@@ -1,0 +1,9 @@
+maybe
+app
+->loop
+  ->scene
+   ->layers
+    ->controls
+
+    simplify traverse code
+    video on one thread
