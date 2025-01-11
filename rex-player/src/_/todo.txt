@@ -1,9 +1,11 @@
-maybe
-app
-->loop
-  ->scene
-   ->layers
-    ->controls
+scene class?
+audio player
+//transparant icons
+fonts
 
-    simplify traverse code
-    video on one thread
+precreate all drawables
+auto size <> to content
+style sheet
+cache scaled icons
+padding / margins
+video frame timing

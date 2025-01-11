@@ -1,10 +1,34 @@
 
+
+trait SampleFormatConversion {
+    fn as_ffmpeg_sample(&self) -> FFmpegSample;
+}
+
+impl SampleFormatConversion for SampleFormat {
+    fn as_ffmpeg_sample(&self) -> FFmpegSample {
+        match self {
+            Self::I16 => FFmpegSample::I16(SampleType::Packed),
+            Self::U16 => {
+                panic!("ffmpeg resampler doesn't support u16")
+            },
+            Self::F32 => FFmpegSample::F32(SampleType::Packed),
+            &_ => {
+                FFmpegSample::I16(SampleType::Packed)
+            }
+        }
+    }
+}
+
+
 struct FfMpeg {
-    scaler: software::scaling::Context,
-    decoder: video::Video,
-    ictx: input::Input,
+    video_scalar: software::scaling::Context,
+    video_decoder: video::Video,
+    audio_decoder: audio::Audio,
+    audio_resample: software::resampling::Context,
+    input_ctx: input::Input,
     frame_index: u32,
     video_stream_index: usize,
+    audio_stream_index: usize,
     dst: x::Drawable,
     w: u32,
     h: u32,
@@ -14,13 +38,13 @@ struct FfMpeg {
 impl FfMpeg {
     fn receive_and_process_decoded_frames(&mut self, ctx:&Xcb) {
         let mut decoded = Video::empty();
-        if self.decoder.receive_frame(&mut decoded).is_ok() {
+        if self.video_decoder.receive_frame(&mut decoded).is_ok() {
             let mut rgb_frame = Video::empty();
-            self.scaler.run(&decoded, &mut rgb_frame);
+            self.video_scalar.run(&decoded, &mut rgb_frame).unwrap();
             let data = rgb_frame.data(0);
-            let plen = data.len() as u32/4;
+            let pl = data.len() as u32/4;
             self.rh = rgb_frame.plane_height(0);
-            self.rw = plen/self.rh;
+            self.rw = pl/self.rh;
             if self.dst == x::Drawable::none() {
                 self.dst = Drawable::Pixmap(ctx.new_pixmap(self.rw as u16,self.rh as u16));
             }
@@ -34,10 +58,10 @@ impl FfMpeg {
     }
 
     fn rescale(&mut self, w:u32, h:u32) {
-        self.scaler = Context::get(
-            self.decoder.format(),
-            self.decoder.width(),
-            self.decoder.height(),
+        self.video_scalar = Context::get(
+            self.video_decoder.format(),
+            self.video_decoder.width(),
+            self.video_decoder.height(),
             Pixel::BGRA,
             w,
             h,
@@ -48,34 +72,72 @@ impl FfMpeg {
         self.dst = Drawable::none();
     }
 
+    fn init_cpal() -> (cpal::Device, cpal::SupportedStreamConfig) {
+        let device = cpal::default_host()
+            .default_output_device()
+            .expect("no output device available");
+
+        let supported_config_range = device.supported_output_configs()
+            .expect("error querying audio output configs")
+            .next()
+            .expect("no supported audio config found");
+
+        (device, supported_config_range.with_max_sample_rate())
+    }
+
+
     fn new(ctx:&Xcb, file:&str, w:u32, h:u32)->Self {
         let mut frame_index = 0;
-        let mut ictx = input(file).unwrap();
+        let mut input_ctx = input(file).unwrap();
 
-        let input = ictx
+        let a_input = input_ctx
+            .streams()
+            .best(Type::Audio)
+            .ok_or(ffmpeg::Error::StreamNotFound).unwrap();
+
+        let input = input_ctx
             .streams()
             .best(Type::Video)
             .ok_or(ffmpeg::Error::StreamNotFound).unwrap();
         let video_stream_index = input.index();
-        let context_decoder = ffmpeg::codec::context::Context::from_parameters(input.parameters()).unwrap();
-        let decoder = context_decoder.decoder().video().unwrap();
+        let audio_stream_index = a_input.index();
 
-        let mut scaler = Context::get(
-            decoder.format(),
-            decoder.width(),
-            decoder.height(),
+        let context_decoder = ffmpeg::codec::context::Context::from_parameters(input.parameters()).unwrap().decoder();
+        let video_decoder = context_decoder.video().unwrap();
+
+        let a_context_decoder = ffmpeg::codec::context::Context::from_parameters(a_input.parameters()).unwrap().decoder();
+        let audio_decoder = a_context_decoder.audio().unwrap();
+
+        let mut video_scalar = Context::get(
+            video_decoder.format(),
+            video_decoder.width(),
+            video_decoder.height(),
             Pixel::BGRA,
             w,
             h,
             Flags::BILINEAR
         ).unwrap();
 
+        let (device, stream_config) = Self::init_cpal();
+        let mut audio_resample = ResamplingContext::get(
+            audio_decoder.format(),
+            audio_decoder.channel_layout(),
+            audio_decoder.rate(),
+
+            stream_config.sample_format().as_ffmpeg_sample(),
+            audio_decoder.channel_layout(),
+            stream_config.sample_rate().0
+        ).unwrap();
+
         Self {
-            scaler,
-            decoder,
-            ictx,
+            video_scalar,
+            video_decoder,
+            audio_decoder,
+            audio_resample,
+            input_ctx,
             frame_index,
             video_stream_index,
+            audio_stream_index,
             dst:x::Drawable::none(),
             w,
             h,
@@ -84,19 +146,24 @@ impl FfMpeg {
         }
     }
 
-    fn wait_events(&mut self,ctx: &Xcb) {
-        for (stream, packet) in self.ictx.packets() {
+    fn wait_events(&mut self,ctx: &Xcb)->bool {
+        for (stream, packet) in self.input_ctx.packets() {
             if stream.index() == self.video_stream_index {
-                self.decoder.send_packet(&packet).unwrap();
+                self.video_decoder.send_packet(&packet).unwrap();
                 self.receive_and_process_decoded_frames(ctx);
-                return;
+                return true;
+            } else if stream.index() == self.audio_stream_index {
+             //   self.audio_decoder.send_packet(&packet).unwrap();
+                return true;
             }
         }
-        thread::sleep(Duration::from_millis(10));
+        //thread::sleep(Duration::from_millis(10));
+        false
     }
 
     fn stop(&mut self) {
-        self.decoder.send_eof().unwrap();
+        self.video_decoder.send_eof().unwrap();
+        self.audio_decoder.send_eof().unwrap();
     }
 
       /* fn save_file(frame: &Video, index: usize) -> std::result::Result<(), std::io::Error> {

@@ -17,12 +17,19 @@ use xcb::x::Event::Expose;
 use xcb::x::ImageFormat;
 use xcb::x::Window;
 
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{Sample, SampleFormat};
+
 use ffmpeg_next as ffmpeg;
 use ffmpeg::Error::*;
-use ffmpeg::format::{input, Pixel};
+use ffmpeg::format::sample::Type as SampleType;
+use ffmpeg_next::decoder::audio;
+use ffmpeg::format::{Sample as FFmpegSample,input, Pixel};
 use ffmpeg::media::Type;
 use ffmpeg::software::scaling::{context::Context, flag::Flags};
+use ffmpeg::software::resampling::{context::Context as ResamplingContext};
 use ffmpeg::util::frame::video::Video;
+use ffmpeg::util::frame::audio::Audio;
 use ffmpeg_next::codec::profile::JPEG2000::CStreamNoRestriction;
 use ffmpeg_next::decoder::video;
 use ffmpeg_next::{software, Error};
@@ -33,6 +40,10 @@ use image::GenericImageView;
 use image::imageops::FilterType;
 
 use rhai::{Engine, EvalAltResult};
+use rhai::packages::Package;
+use rhai_fs::FilesystemPackage;
+use rhai_rand::RandomPackage;
+
 use json::{array, JsonValue};
 use rand::{random, thread_rng, Rng};
 
@@ -44,70 +55,104 @@ include!("ffmpeg.rs");
 struct App {
     ctx: Xcb,
     pub window: x::Window,
+    back_buffer: x::Pixmap,
     width:u16,
     height:u16,
     players: Layer,
     overlay: Layer,
-    ffms: Vec<(x::Drawable,FfMpeg)>
+    ffms: Vec<(x::Drawable,FfMpeg)>,
+    engine: Rhai
 }
 
 impl App {
     fn new(w:u16,h:u16)-> Self {
         let mut ctx = Xcb::new();
-        let window = ctx.new_window(0xFF000033);
+        let back_buffer = x::Pixmap::none();
+        let window = ctx.new_window(0xFF101010);
         ctx.prepare(window);
       //  let (tx,rx) = mpsc::channel();
-        let players = Layer::new("media-quad.view",&mut ctx,window,0,w,h);
-        let overlay = Layer::new("osd.view",&mut ctx,window,0,w,h);
-
+        let players = Layer::new("media-quad.view",&mut ctx,window,0,0,w,h);
+        let overlay = Layer::new("osd.view",&mut ctx,window,0,0,w,h);
+        let engine = Rhai::new();
         Self {
             width:w,
             height:h,
             ctx,
             window,
+            back_buffer,
             players,
             overlay,
-            ffms: vec![]
+            ffms: vec![],
+            engine
         }
     }
     fn clean_up(&mut self) {
 
     }
     fn prepare(&mut self) {
-        ffmpeg::init().expect("TODO: panic message");
+        ffmpeg::init();
         
         self.players.fit_all(&self.ctx,self.width,self.height);
         self.overlay.fit_all(&self.ctx,self.width,self.height);
+        self.overlay.root_visual.show(&self.ctx);
         self.ctx.show(self.window);
     }
     fn idle(&self) {
         self.ctx.collect();
-        //thread::sleep(time::Duration::from_millis(1));
+        thread::sleep(Duration::from_millis(1));
     }
 
     fn run(&mut self) {
         let mut ctx = &self.ctx;
         let mut li = 0;
+
         loop {
             let ev = ctx.wait_event();
             li+=1;
             match ev.code {
                 XcbEvent::NONE => {
+                    let medias  = self.players.select("media");
+                    let mut idx = 0;
+                    let bbd = Drawable::Pixmap(self.back_buffer);
                     for mut f in self.ffms.iter_mut() {
-                      //  println!("!");
-                        f.1.wait_events(ctx);
-                        if f.1.dst != x::Drawable::none() {
-                            ctx.copy(ctx.gc, f.1.dst, f.0, 0, 0, 0, 0, f.1.w as u16, f.1.h as u16);
+                        let m = &medias[idx];
+                        idx += 1;
+                        if f.1.wait_events(ctx) {
+                            if f.1.dst != x::Drawable::none() {
+                                ctx.copy(ctx.gc, f.1.dst, bbd, 0, 0, m.x, m.y, m.width, m.height);
+                            }
+                        } else {
+                            f.1 = FfMpeg::new(ctx, &self.engine.exec(&m.content), m.width as u32,m.height as u32);
                         }
                     }
+                    let bbw = Drawable::Window(self.window);
+                    ctx.copy(ctx.gc, bbd, bbw, 0, 0, 0, 0, self.width, self.height);
 
+                    let icons = self.overlay.select("i");
+                    for vi in icons {
+                        if vi.inv_mask != x::Pixmap::none() {
+                            let wd = Drawable::Window(vi.window);
+                            let gc = ctx.new_gc(wd,vi.bg,vi.fg);
+                            let mgc = ctx.new_masked_gc(wd,vi.mask,vi.fg,vi.bg);
+                            let mgci = ctx.new_masked_gc(wd,vi.inv_mask,vi.fg,vi.bg);
+
+                            ctx.rect(gc,wd,0,0,vi.width,vi.height);
+                            ctx.copy(mgci, bbd, wd, vi.ax, vi.ay, 0, 0, vi.width, vi.height);
+                            ctx.copy(mgc, Drawable::Pixmap(vi.buf), wd, 0, 0, 0, 0, vi.width, vi.height);
+                        }
+                    }
                     self.idle();
                 }
                 XcbEvent::RESIZE => {
                     if self.width!=ev.width || self.height!=ev.height {
-                        println!("RESIZE {}x{}",ev.width,ev.height);
+                   //     println!("RESIZE {}x{}",ev.width,ev.height);
                         self.width = ev.width;
                         self.height = ev.height;
+
+                        self.back_buffer = ctx.new_pixmap(self.width,self.height);
+                        ctx.map_bg(self.window,self.back_buffer);
+
+                        //ctx.map_bg(self.window,s);
                         self.players.fit_all(ctx,self.width,self.height);
                         self.overlay.fit_all(ctx,self.width,self.height);
 
@@ -115,7 +160,7 @@ impl App {
                    //     println!("{:?}",medias.len());
                         if self.ffms.is_empty() {
                             for m in medias {
-                                self.ffms.push((Drawable::Window(m.window),FfMpeg::new(ctx, &asset!("sample","mp4"), m.width as u32,m.height as u32)));
+                                self.ffms.push((Drawable::Window(m.window),FfMpeg::new(ctx, &self.engine.exec(&m.content), m.width as u32,m.height as u32)));
                             }
                         } else {
                             let mut idx = 0;
@@ -142,13 +187,7 @@ impl App {
                     }
                 }
                 XcbEvent::RENDER => {
-                    let vio = self.overlay.visual(ev.window.resource_id());
-                    if vio.is_some() {
-                        let vi = vio.unwrap();//self.overlay.controls.get(vio.unwrap()).unwrap();
-                        if vi.buf != x::Pixmap::none() {
-                            ctx.copy(ctx.gc, Drawable::Pixmap(vi.buf), Drawable::Window(vi.window), 0, 0, 0, 0, vi.width, vi.height);
-                        }
-                    }
+
                 }
                 _ => {}
             }

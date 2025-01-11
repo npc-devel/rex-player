@@ -4,7 +4,19 @@ macro_rules! asset {
     ($x:expr,$y:expr) => {
         {
             let temp_s = format!("{}/../assets/{}.{}",std::env::current_dir().unwrap().as_path().to_str().unwrap(),$x,$y);
+
             temp_s
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! script {
+    ($x:expr,$y:expr) => {
+        {
+            let temp_s = format!("{}/src/scripts/{}.{}",std::env::current_dir().unwrap().as_path().to_str().unwrap(),$x,$y);
+
+            std::fs::read_to_string(temp_s).unwrap()
         }
     }
 }

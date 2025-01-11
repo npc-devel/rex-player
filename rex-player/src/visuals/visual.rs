@@ -2,6 +2,8 @@
 struct Visual {
     x:i16,
     y:i16,
+    ax:i16,
+    ay:i16,
     width:u16,
     height:u16,
     inv_mask: x::Pixmap,
@@ -9,6 +11,7 @@ struct Visual {
     buf: x::Pixmap,
     window: x::Window,
     bg: u32,
+    fg: u32,
     children: Vec<Visual>,
     attrs: strmap!(),
     tag: String,
@@ -52,10 +55,12 @@ impl Visual {
         None
     }
     
-    pub fn new(window:x::Window,bg:u32,n:&SceneNode)->Self {
+    pub fn new(window:x::Window,bg:u32,fg:u32,n:&SceneNode)->Self {
         Self {
             x: 0,
             y: 0,
+            ax: 0,
+            ay: 0,
             width: 64,
             height: 64,
             inv_mask:x::Pixmap::none(),
@@ -63,6 +68,7 @@ impl Visual {
             buf: x::Pixmap::none(),
             window,
             bg,
+            fg,
             attrs: n.attrs.clone(),
             children: vec![],
             tag: n.tag.clone(),
@@ -70,14 +76,25 @@ impl Visual {
         }
     }
 
-    pub fn anchor_fit_to(&mut self, ctx:&Xcb, l:&Visual,p:&Visual) {
+    pub fn show(&self,ctx:&Xcb) {
+        ctx.show(self.window);
+        for c in &self.children {
+            c.show(ctx);
+        }
+    }
+
+    pub fn anchor_fit_to(&mut self, ctx:&Xcb, l:&Visual,p:&Visual,ax:i16,ay:i16) {
         self.x = 0;
         self.y = 0;
         for a in self.attrs.clone().iter() {
             let aa = a.1.split(".").into_iter().collect::<Vec<&str>>();
             match a.0.as_str() {
+                "fg" => {
+                    self.fg = u32::from_str_radix(&a.1, 16).unwrap();
+                }
                 "bg" => {
-                    ctx.bg(self.window,u32::from_str_radix(&a.1, 16).unwrap());
+                    self.bg = u32::from_str_radix(&a.1, 16).unwrap();
+                    ctx.bg(self.window,self.bg);
                 }
                 "w" => {
                     self.width = Self::calc(&a.1,p.width,p.height);
@@ -134,15 +151,18 @@ impl Visual {
                 _ => {}
             }
         }
+        self.ax = ax + self.x;
+        self.ay = ay + self.y;
+
         ctx.pos(self.window,self.x,self.y);
         ctx.size(self.window,self.width,self.height);
-        ctx.show(self.window);
+     //   ctx.show(self.window);
 
         match self.tag.as_str() {
             "i" => {
-                self.mask = ctx.new_mask(&self.content, false, self.width as i16, self.height as i16);
-                self.inv_mask = ctx.new_mask(&self.content, true, self.width as i16, self.height as i16);
-                self.buf = ctx.new_img_backgrounded(&self.content,self.width as i16, self.height as i16,self.bg);
+                self.mask = ctx.new_mask(&self.content,8, false, self.width as i16, self.height as i16);
+                self.inv_mask = ctx.new_mask(&self.content,8, true, self.width as i16, self.height as i16);
+                self.buf = ctx.new_img_from_alpha(&self.content,8,self.width as i16, self.height as i16,self.bg,self.fg);
             }
             "media" => {
              //   let drw = Drawable::Window(self.window.clone());
@@ -155,7 +175,7 @@ impl Visual {
                 let fs = self.clone();
                 let mut l = &fs;
                 for c in self.children.iter_mut() {
-                    c.anchor_fit_to(ctx,l,&fs);
+                    c.anchor_fit_to(ctx,l,&fs,self.ax,self.ay);
                     l = c;
                 }
             }

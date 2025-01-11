@@ -22,24 +22,24 @@ impl Layer {
         let mut cs = self.root_visual.clone();
         let mut last = &cs;
         for c in self.root_visual.children.iter_mut() {
-            c.anchor_fit_to(ctx,&last,&cs);
+            c.anchor_fit_to(ctx,&last,&cs,0,0);
             last = c;
         }
     }
     pub fn build_all(&mut self, ctx:&Xcb, win:x::Window) {
-        self.root_visual = Visual::new(win, 0xFF111111,&self.root);
+        self.root_visual = Visual::new(win, 0xFF111111,0xFFFFFFFF,&self.root);
         for c in &self.root.children {
             c.build_in(ctx,win,&mut self.root_visual);
         }
     }
-   pub fn new(file:&str,ctx:&Xcb,win:x::Window,bg:u32,w:u16,h:u16)->Self {
+   pub fn new(file:&str,ctx:&Xcb,win:x::Window,bg:u32,fg:u32,w:u16,h:u16)->Self {
        let raw = view!(file,"rhai");
        let processed = Self::process(&raw);
        let jdoc = "{ \"content\": [ ".to_string() + processed.as_str() + " ] }";
 //        println!("***********************************************************\n\n{jdoc}\n\n*********************************************************************************");
        let mut dom = json::parse(&jdoc).unwrap();
        let root = SceneNode::new(&mut dom);
-       let mut root_visual = Visual::new(win, bg, &root);
+       let mut root_visual = Visual::new(win, bg, fg, &root);
 
        for c in &root.children {
            c.build_in(ctx,win,&mut root_visual);
@@ -57,6 +57,7 @@ impl Layer {
         while pro.find("  ").is_some() {
             pro = pro.replace("  "," ");
         }
+        pro = pro.replace("\"","\\\"").trim().to_string();
         pro = pro.replace("> <","><").trim().to_string();
         pro = pro.replace("</>","]] }");
         pro = pro.replace(">","]], \"content\": [[");
@@ -67,7 +68,7 @@ impl Layer {
         pro = pro.replace("}{","},{");
         pro = pro.replace("[[","\"");
         pro = pro.replace("]]","\"");
-
+     //   println!("{pro}");
         pro
     }
 }

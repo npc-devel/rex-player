@@ -1,1 +1,1 @@
-<media w=100pw h=100ph></>
+<media w=100pw h=100ph>??=next("XXX","shuffle")??</>

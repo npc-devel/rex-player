@@ -1,3 +1,4 @@
+use xcb::x::{ChangeProperty, ConfigWindow, Property};
 
 xcb::atoms_struct! {
     #[derive(Debug)]
@@ -47,18 +48,25 @@ impl XcbEvent {
 }
 
 impl Xcb {
-    fn new_mask(&self,file:&str,inverted:bool,nw:i16,nh:i16)->x::Pixmap {
+    fn new_mask(&self,file:&str,pad:u16,inverted:bool,nw:i16,nh:i16)->x::Pixmap {
         let mut img = image::open(asset!(file,"png")).unwrap();
         let mut width = img.width() as u16;
         let mut height = img.height() as u16;
-        if nw > - 1  || nh > -1 {
-            width = nw as u16;
-            height = nh as u16;
-            img = img.resize_to_fill(width as u32,height as u32,FilterType::Triangle);
-        }
+        let iw = width - 2 * pad;
+        let ih = height - 2 * pad;
+        //if nw > - 1  || nh > -1 {
+        width = nw as u16;
+        height = nh as u16;
+        let iw = width - 2 * pad;
+        let ih = height - 2 * pad;
+        img = img.resize_to_fill(iw as u32, ih as u32, FilterType::Triangle);
+        //}
+        //}
         let img = img.to_rgba8();
-        let pad = (32 - (width % 32))%32;
-        let paddedw = width + pad;
+        let bpad = (32 - (width % 32))%32;
+        let paddedw = width + bpad;
+        let ibpad = (32 - (iw % 32))%32;
+        let ipaddedw = iw + ibpad;
 
         let pix:x::Pixmap = self.new_id::<x::Pixmap>();
         self.request(&x::CreatePixmap{
@@ -68,16 +76,16 @@ impl Xcb {
             width:paddedw,
             height
         });
-
+  //      println!("{} {}",height,paddedw);
         let mut u: Vec<u8> = vec![];
-        let allp : i16 = (height*paddedw) as i16;
+        let ap : i64 = (ih as i64*ipaddedw as i64);
         let mut tb: u8 = 0;
         let mut ix: u32 = 0;
         let mut iy: u32 = 0;
         let xo: i32 = 0;
-        for i in 0..allp {
+        for i in 0..ap {
             let sx = ix as i32 + xo;
-            if sx>-1 && sx < (width as i32) && iy < (height as u32) {
+            if sx>-1 && sx < (iw as i32) && iy < (ih as u32) {
                 if  (!inverted && img.get_pixel(sx as u32,iy).0[3]>127) ||
                     (inverted && img.get_pixel(sx as u32,iy).0[3]<127) { tb = tb | 1<<(i%8) as u8 }
             } else {
@@ -88,33 +96,46 @@ impl Xcb {
                 u.push(tb);
                 tb = 0;
             }
-            if ix == paddedw as u32 { ix = 0; iy+=1 }
+            if ix == ipaddedw as u32 { ix = 0; iy+=1 }
         }
+        let mut fg = 0;
+        let mut bg = 1;
+        if inverted {
+            fg = 1;
+            bg = 0;
+        }
+        let gc = self.new_gc(Drawable::Pixmap(pix),fg,bg);
+        let drawable = Drawable::Pixmap(pix);
+        self.rect(gc,drawable,0,0,width,height);
 
         self.request(&x::PutImage{
             format: ImageFormat::ZPixmap,
             depth: 1,
-            drawable: Drawable::Pixmap(pix),
-            gc: self.new_gc(Drawable::Pixmap(pix)),
-            width: paddedw,
-            height,
-            dst_x: 0,
-            dst_y: 0,
+            drawable,
+            gc,
+            width: iw,
+            height: ih,
+            dst_x: pad as i16,
+            dst_y: pad as i16,
             left_pad: 0,
             data: &u.as_ref(),
         });
         pix
     }
-    fn new_img(&self,file:&str,nw:i16,nh:i16)->x::Pixmap {
+    fn new_img(&self,file:&str,pad:u16,nw:i16,nh:i16)->x::Pixmap {
         let mut img = image::open(asset!(file,"png")).unwrap();
         let mut width = img.width() as u16;
         let mut height = img.height() as u16;
-
-        if nw > - 1  || nh > -1 {
-            width = nw as u16;
-            height = nh as u16;
-            img = img.resize_to_fill(width as u32,height as u32,FilterType::Triangle);
-        }
+        let iw = width - 2 * pad;
+        let ih = height - 2 * pad;
+        //if nw > - 1  || nh > -1 {
+        width = nw as u16;
+        height = nh as u16;
+        let iw = width - 2 * pad;
+        let ih = height - 2 * pad;
+        img = img.resize_to_fill(iw as u32, ih as u32, FilterType::Triangle);
+        //}
+        //}
         let img = img.to_rgba8();
 
         let pix:x::Pixmap = self.new_id::<x::Pixmap>();
@@ -130,7 +151,7 @@ impl Xcb {
             format: ImageFormat::ZPixmap,
             depth: self.depth,
             drawable: Drawable::Pixmap(pix),
-            gc: self.new_gc(Drawable::Pixmap(pix)),
+            gc: self.new_gc(Drawable::Pixmap(pix),1,0),
             width,
             height,
             dst_x: 0,
@@ -140,17 +161,20 @@ impl Xcb {
         });
         pix
     }
-    fn new_img_backgrounded(&self,file:&str,nw:i16,nh:i16,bg:u32)->x::Pixmap {
+    fn new_img_from_alpha(&self,file:&str,pad:u16,nw:i16,nh:i16,bg:u32,fg:u32)->x::Pixmap {
   //      println!("backgrounded {file}");
         let mut img = image::open(asset!(file,"png")).unwrap();
         let mut width = img.width() as u16;
         let mut height = img.height() as u16;
-
-        if nw > - 1  || nh > -1 {
+        let iw = width - 2 * pad;
+        let ih = height - 2 * pad;
+        //if nw > - 1  || nh > -1 {
             width = nw as u16;
             height = nh as u16;
-            img = img.resize_to_fill(width as u32,height as u32,FilterType::Triangle);
-        }
+            let iw = width - 2 * pad;
+            let ih = height - 2 * pad;
+            img = img.resize_to_fill(iw as u32, ih as u32, FilterType::Triangle);
+        //}
         let mut img = img.to_rgba8();
         let pix:x::Pixmap = self.new_id::<x::Pixmap>();
         self.request(&x::CreatePixmap{
@@ -164,24 +188,28 @@ impl Xcb {
         let bgr = ((bg >> 16) & 0xff) as f32;
         let bgg = ((bg >> 8) & 0xff) as f32;
         let bgb = (bg & 0xff) as f32;
+        let fgr = ((fg >> 16) & 0xff) as f32;
+        let fgg = ((fg >> 8) & 0xff) as f32;
+        let fgb = (fg & 0xff) as f32;
+
         let u32: Vec<u32> = vec![];
         for mut p in img.pixels_mut() {
             let l = (p.0[3] as f32/255.0);
             let il = 1.0-l;
-            p.0[0] = (bgb*il+p.0[0] as f32*l) as u8;
-            p.0[1] = (bgg*il+p.0[1] as f32*l) as u8;
-            p.0[2] = (bgr*il+p.0[2] as f32*l) as u8;
+            p.0[0] = (bgb*il+fgb*l) as u8;
+            p.0[1] = (bgg*il+fgg*l) as u8;
+            p.0[2] = (bgr*il+fgr*l) as u8;
         }
 
         self.request(&x::PutImage{
             format: ImageFormat::ZPixmap,
             depth: self.depth,
             drawable: Drawable::Pixmap(pix),
-            gc: self.new_gc(Drawable::Pixmap(pix)),
-            width,
-            height,
-            dst_x: 0,
-            dst_y: 0,
+            gc: self.new_gc(Drawable::Pixmap(pix),1,0),
+            width:iw,
+            height:ih,
+            dst_x: pad as i16,
+            dst_y: pad as i16,
             left_pad: 0,
             data: &img.as_bytes(),
         });
@@ -214,11 +242,27 @@ impl Xcb {
             value_list: &[x::Cw::BackPixel(bg),x::Cw::EventMask(x::EventMask::OWNER_GRAB_BUTTON | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
         });
         self.select_input_cfg(window);
-      //  self.drawable = Drawable::Window(window);
-       // self.gc = self.new_gc(self.drawable);
         window
     }
-    fn new_sheer_window(&self,parent:x::Window,bg:u32)->x::Window {
+    fn new_buffered_window(&self,map:x::Pixmap)->x::Window {
+        let window:x::Window = self.new_id::<x::Window>();
+        self.request(&x::CreateWindow{
+            depth: self.depth,
+            wid: window,
+            parent: self.root,
+            x: 0,
+            y: 0,
+            width: 1280,
+            height: 720,
+            border_width: 0,
+            class: x::WindowClass::CopyFromParent,
+            visual: self.visual_id,
+            value_list: &[x::Cw::BackPixmap(map),x::Cw::EventMask(x::EventMask::OWNER_GRAB_BUTTON | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
+        });
+        self.select_input_cfg(window);
+        window
+    }
+    fn new_sheer_window(&self,parent:x::Window,mut bg:u32)->x::Window {
         let window:x::Window = self.new_id::<x::Window>();
         self.request(&x::CreateWindow{
             depth: self.depth,
@@ -231,7 +275,7 @@ impl Xcb {
             border_width: 0,
             class: x::WindowClass::CopyFromParent,
             visual: self.visual_id,
-            value_list: &[x::Cw::BackingPixel(bg),x::Cw::EventMask(x::EventMask::OWNER_GRAB_BUTTON | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
+            value_list: &[x::Cw::BackPixel(bg),x::Cw::EventMask(x::EventMask::OWNER_GRAB_BUTTON | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
         });
         window
     }
@@ -269,21 +313,21 @@ impl Xcb {
         });
         window
     }
-    fn new_gc(&self,d:Drawable) ->x::Gcontext{
+    fn new_gc(&self,d:Drawable,fg:u32,bg:u32) ->x::Gcontext{
         let oid = self.new_id();
         self.request(&x::CreateGc {
             cid: oid,
             drawable: d,
-            value_list: &[Gc::Foreground(0xFFEEEEEE), Gc::Background(0xFF111111)]
+            value_list: &[Gc::Foreground(fg), Gc::Background(bg)]
         });
         oid
     }
-    fn new_masked_gc(&self,d:Drawable,msk:x::Pixmap) ->x::Gcontext{
+    fn new_masked_gc(&self,d:Drawable,msk:x::Pixmap,fg:u32,bg:u32) ->x::Gcontext{
         let oid = self.new_id();
-        self.dbg_request(&x::CreateGc {
+        self.request(&x::CreateGc {
             cid: oid,
             drawable: d,
-            value_list: &[Gc::ClipMask(msk)]
+            value_list: &[Gc::Foreground(fg), Gc::Background(bg),Gc::ClipMask(msk)]
         });
         oid
     }
@@ -349,7 +393,7 @@ impl Xcb {
     }
     pub fn prepare(&mut self,window:x::Window) {
         self.drawable = Drawable::Window(window);
-        self.gc = self.new_gc(self.drawable);
+        self.gc = self.new_gc(self.drawable,0xFFFFFFFF,0xFF000000);
     }
     pub fn new()->Self {
         let (conn,screen_n) = xcb::Connection::connect_with_extensions(None, &[xcb::Extension::Present], &[]).unwrap();
@@ -432,6 +476,12 @@ impl Xcb {
            value_list: &[Cw::BackPixel(bg)]
        });
     }
+    pub fn map_bg(&self,window:x::Window,map:x::Pixmap) {
+        self.request(&x::ChangeWindowAttributes {
+            window,
+            value_list: &[Cw::BackPixmap(map) ]
+        });
+    }
     pub fn fill(&self,gc:Gcontext,drawable:Drawable,b:&[u8],dst_x:i16,dst_y:i16,width:u16,height:u16){
         self.request(&x::PutImage {
             format: x::ImageFormat::ZPixmap,
@@ -446,7 +496,7 @@ impl Xcb {
             data: &b.as_ref()
         });
     }
-    pub fn rect(&self,gc:Gcontext,drawable:Drawable,x:i16,y:i16,width:u16,height:u16,cl:u32){
+    pub fn rect(&self,gc:Gcontext,drawable:Drawable,x:i16,y:i16,width:u16,height:u16) {
         let r = x::Rectangle {
             x,
             y,
