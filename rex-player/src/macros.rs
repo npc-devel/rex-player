@@ -33,8 +33,34 @@ macro_rules! view {
 }
 
 #[macro_export]
+macro_rules! style {
+    ($x:expr) => {
+        {
+            let temp_s = format!("{}/src/styles/{}.{}",std::env::current_dir().unwrap().as_path().to_str().unwrap(),$x,"rhss");
+  //          println!("{temp_s}");
+            std::fs::read_to_string(temp_s).unwrap()
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! intmap {
+    ()=> { HashMap<String,i32> }
+}
+
+#[macro_export]
+macro_rules! charmap {
+    ()=> { HashMap<i32,HashMap<String,i32>> }
+}
+
+#[macro_export]
 macro_rules! strmap {
     ()=> { HashMap<String,String> }
+}
+
+#[macro_export]
+macro_rules! mapmap {
+    ()=> { HashMap<String,HashMap<String,String>> }
 }
 
 #[macro_export]
@@ -49,6 +75,11 @@ macro_rules! winmap {
 #[macro_export]
 macro_rules! resmap {
     ()=> { HashMap<u32,x::Pixmap> }
+}
+
+#[macro_export]
+macro_rules! spritemap {
+    ()=> { HashMap<String,Sprite> }
 }
 
 #[macro_export]

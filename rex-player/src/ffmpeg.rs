@@ -1,4 +1,4 @@
-
+use ffmpeg_next::format::context::Input;
 
 trait SampleFormatConversion {
     fn as_ffmpeg_sample(&self) -> FFmpegSample;
@@ -84,12 +84,15 @@ impl FfMpeg {
 
         (device, supported_config_range.with_max_sample_rate())
     }
-
-
-    fn new(ctx:&Xcb, file:&str, w:u32, h:u32)->Self {
+    
+    
+    fn open(file:&str)->Result<Input,Error> {
+        println!("opening {file}");
+        input(file)
+    }
+    
+    fn new(ctx:&Xcb,input_ctx:Input,w:u32,h:u32)->Self {
         let mut frame_index = 0;
-        let mut input_ctx = input(file).unwrap();
-
         let a_input = input_ctx
             .streams()
             .best(Type::Audio)
@@ -149,7 +152,7 @@ impl FfMpeg {
     fn wait_events(&mut self,ctx: &Xcb)->bool {
         for (stream, packet) in self.input_ctx.packets() {
             if stream.index() == self.video_stream_index {
-                self.video_decoder.send_packet(&packet).unwrap();
+                self.video_decoder.send_packet(&packet);
                 self.receive_and_process_decoded_frames(ctx);
                 return true;
             } else if stream.index() == self.audio_stream_index {

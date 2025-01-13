@@ -83,7 +83,7 @@ impl Visual {
         }
     }
 
-    pub fn anchor_fit_to(&mut self, ctx:&Xcb, l:&Visual,p:&Visual,ax:i16,ay:i16) {
+    pub fn anchor_fit_to(&mut self, ctx:&Xcb, style:&Style, l:&Visual,p:&Visual,ax:i16,ay:i16) {
         self.x = 0;
         self.y = 0;
         for a in self.attrs.clone().iter() {
@@ -154,11 +154,15 @@ impl Visual {
         self.ax = ax + self.x;
         self.ay = ay + self.y;
 
-        ctx.pos(self.window,self.x,self.y);
-        ctx.size(self.window,self.width,self.height);
-     //   ctx.show(self.window);
-
         match self.tag.as_str() {
+            "lbl" => {
+                let fnt = style.fonts.get("_").unwrap();
+                let (sw,sh) = fnt.measure_row(&self.content,24,self.width, self.height);
+                self.buf = ctx.new_pixmap(sw,sw);
+                fnt.row(ctx,self.buf,&self.content,24);
+                self.width = sw;
+                self.height = sh;
+            }
             "i" => {
                 self.mask = ctx.new_mask(&self.content,8, false, self.width as i16, self.height as i16);
                 self.inv_mask = ctx.new_mask(&self.content,8, true, self.width as i16, self.height as i16);
@@ -175,10 +179,13 @@ impl Visual {
                 let fs = self.clone();
                 let mut l = &fs;
                 for c in self.children.iter_mut() {
-                    c.anchor_fit_to(ctx,l,&fs,self.ax,self.ay);
+                    c.anchor_fit_to(ctx,style,l,&fs,self.ax,self.ay);
                     l = c;
                 }
             }
         }
+
+        ctx.pos(self.window,self.x,self.y);
+        ctx.size(self.window,self.width,self.height);
     }
 }

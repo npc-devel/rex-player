@@ -9,3 +9,16 @@ style sheet
 cache scaled icons
 padding / margins
 video frame timing
+--- multithread
+optimize
+more use of ?
+click events
+hover
+overflow free seek
+file meta filter
+logging
+settings
+file cleanup
+transcode
+? newsgroups
+? torrents

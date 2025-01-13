@@ -1,0 +1,19 @@
+root {
+    font: default 31;
+}
+
+icon {
+    width: 64px;
+    height: 64px;
+    fg: #8811ff;
+    bg: transparent;
+}
+
+lbl {
+    fg: #ffffff;
+    height: 64px;
+}
+
+#close {
+    fg: #ff8888;
+}

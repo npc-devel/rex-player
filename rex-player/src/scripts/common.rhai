@@ -34,7 +34,7 @@ fn next(lib,mode) {
 
     let all = [];
     do {
-        let di = rand() % v_dirs.len+1;
+        let di = rand() % (v_dirs.len+1);
         if di < v_dirs.len { all = all_files(v_dirs[di],[]); }
         else { all = files(base,[]); }
     } while all.len == 0;
