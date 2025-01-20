@@ -156,17 +156,27 @@ impl Visual {
 
         match self.tag.as_str() {
             "lbl" => {
+                let mut pad:i16 = -1;
+                let line_h = 64;
                 let fnt = style.fonts.get("_").unwrap();
-                let (sw,sh) = fnt.measure_row(&self.content,24,self.width, self.height);
-                self.buf = ctx.new_pixmap(sw,sw);
-                fnt.row(ctx,self.buf,&self.content,24);
+                let (mut sw,sh) = fnt.measure_row(&self.content,self.width, self.height);
+                let yo = (line_h-sh as i16)/2;
+                if pad == -1 { pad = yo; }
+                sw += 2*pad as u16;
                 self.width = sw;
-                self.height = sh;
+                self.height = line_h as u16;
+                
+                self.buf = ctx.new_pixmap(self.width,self.height);
+                fnt.row(ctx,self.buf,&self.content,pad,yo,self.width, self.height);
+                self.mask = ctx.new_mask(self.width as i16, self.height as i16);
+                fnt.mask(ctx,self.mask,&self.content,pad,yo,false,self.width, self.height);
+                self.inv_mask = ctx.new_mask(self.width as i16, self.height as i16);
+                fnt.mask(ctx,self.inv_mask,&self.content,pad,yo,true,self.width, self.height);
             }
             "i" => {
-                self.mask = ctx.new_mask(&self.content,8, false, self.width as i16, self.height as i16);
-                self.inv_mask = ctx.new_mask(&self.content,8, true, self.width as i16, self.height as i16);
-                self.buf = ctx.new_img_from_alpha(&self.content,8,self.width as i16, self.height as i16,self.bg,self.fg);
+                self.mask = ctx.mask_from_file(&self.content,8, false, self.width as i16, self.height as i16);
+                self.inv_mask = ctx.mask_from_file(&self.content,8, true, self.width as i16, self.height as i16);
+                self.buf = ctx.img_from_alpha(&self.content,8,self.width as i16, self.height as i16,self.bg,self.fg);
             }
             "media" => {
              //   let drw = Drawable::Window(self.window.clone());

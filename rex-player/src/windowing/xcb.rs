@@ -48,7 +48,21 @@ impl XcbEvent {
 }
 
 impl Xcb {
-    fn new_mask(&self,file:&str,pad:u16,inverted:bool,nw:i16,nh:i16)->x::Pixmap {
+    fn new_mask(&self,width:i16,height:i16)->x::Pixmap {
+        let bpad = (32 - (width % 32))%32;
+        let paddedw = width + bpad;
+
+        let pix:x::Pixmap = self.new_id::<x::Pixmap>();
+        self.request(&x::CreatePixmap{
+            depth: 1,
+            pid: pix,
+            drawable: self.drawable,
+            width: paddedw as u16,
+            height: height as u16
+        });
+        pix
+    }
+    fn mask_from_file(&self,file:&str,pad:u16,inverted:bool,nw:i16,nh:i16)->x::Pixmap {
         let mut img = image::open(asset!(file,"png")).unwrap();
         let mut width = img.width() as u16;
         let mut height = img.height() as u16;
@@ -161,7 +175,7 @@ impl Xcb {
         });
         pix
     }
-    fn new_img_from_alpha(&self,file:&str,pad:u16,nw:i16,nh:i16,bg:u32,fg:u32)->x::Pixmap {
+    fn img_from_alpha(&self,file:&str,pad:u16,nw:i16,nh:i16,bg:u32,fg:u32)->x::Pixmap {
   //      println!("backgrounded {file}");
         let mut img = image::open(asset!(file,"png")).unwrap();
         let mut width = img.width() as u16;
@@ -420,7 +434,7 @@ impl Xcb {
         let cookie = self.conn.send_request_checked(req);
         let result = self.conn.check_request(cookie);
         if result.is_err() {
-            print!("dbg_request: {:?}\n\n", result.err())
+            panic!("dbg_request: {:?}\n\n", result.err())
         }
     }
     fn request(&self,req:&impl Request) {

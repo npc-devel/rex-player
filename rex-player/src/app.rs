@@ -51,8 +51,9 @@ include!("rhai.rs");
 include!("windowing/xcb.rs");
 include!("visuals/style.rs");
 include!("visuals/layer.rs");
+include!("visuals/sprite.rs");
 include!("ffmpeg.rs");
-include!("sprite.rs");
+
 
 struct App {
     ctx: Xcb,
@@ -96,7 +97,7 @@ impl App {
 
     }
     fn prepare(&mut self) {
-        ffmpeg::init();
+        FfMpeg::init();
         
         self.players.fit_all(&self.ctx,&self.style,self.width,self.height);
         self.overlay.fit_all(&self.ctx,&self.style,self.width,self.height);
@@ -147,13 +148,14 @@ impl App {
                         let wd = Drawable::Window(vi.window);
                         
                         if vi.inv_mask != x::Pixmap::none() {
-                            let gc = ctx.new_gc(wd,vi.bg,vi.fg);
+                            let vd = Drawable::Pixmap(vi.buf);
+                            let gc = ctx.new_gc(vd,vi.bg,vi.fg);
                             let mgc = ctx.new_masked_gc(wd,vi.mask,vi.fg,vi.bg);
                             let mgc_i = ctx.new_masked_gc(wd,vi.inv_mask,vi.fg,vi.bg);
 
                             ctx.rect(gc,wd,0,0,vi.width,vi.height);
                             ctx.copy(mgc_i, bbd, wd, vi.ax, vi.ay, 0, 0, vi.width, vi.height);
-                            ctx.copy(mgc, Drawable::Pixmap(vi.buf), wd, 0, 0, 0, 0, vi.width, vi.height);
+                            ctx.copy(mgc, vd, wd, 0, 0, 0, 0, vi.width, vi.height);
                         } else if vi.buf != x::Pixmap::none() {
                             ctx.copy(ctx.gc, Drawable::Pixmap(vi.buf), wd, 0, 0, 0, 0, vi.width, vi.height);
                         }

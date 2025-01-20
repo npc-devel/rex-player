@@ -20,7 +20,7 @@ impl Style {
         }
         
         let mut fonts : spritemap!() = nmap!();
-        fonts.insert("_".to_string(),Sprite::new(ctx,"fonts/default/21",0xFFFFFFFF,0xFF000000));
+        fonts.insert("_".to_string(),Sprite::new(ctx,"fonts/default/31",0xFF0070F5,0xFF000000));
             
         Self {
             rules,

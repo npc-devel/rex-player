@@ -22,3 +22,13 @@ file cleanup
 transcode
 ? newsgroups
 ? torrents
+
+apt-get *************************
+alsa.pc -> libasound2-dev
+libavutil.pc -> libavutil-dev
+libavformat.pc -> libavformat-dev
+libavfilter.pc -> libavfilter-dev
+libavdevice.pc -> libavdevice-dev
+cmake
+clang / clangd
+libxcb1-dev
