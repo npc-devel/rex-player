@@ -101,7 +101,7 @@ impl FfMpeg {
         Ok(input_ctx)
     }
     
-    fn new(ctx:&Xcb,input_ctx:Input,w:u32,h:u32)->Self {
+    fn new(input_ctx:Input,w:u32,h:u32)->Self {
         let mut frame_index = 0;
         let a_input = input_ctx
             .streams()

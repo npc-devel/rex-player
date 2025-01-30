@@ -1,12 +1,14 @@
+
 use std::thread::spawn;
 use std::collections::HashMap;
-use std::sync::mpsc;
+use std::sync::{mpsc, LazyLock};
 use std::thread;
 use std::sync::mpsc::{Sender,Receiver};
 use std::thread::{Scope,Thread};
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
+use std::ops::Deref;
 use std::time::Duration;
 
 use xcb::x::Visualid;
@@ -39,7 +41,7 @@ use image::{DynamicImage, Rgba, ImageReader, EncodableLayout};
 use image::GenericImageView;
 use image::imageops::FilterType;
 
-use rhai::{Engine, EvalAltResult};
+use rhai::{Engine, EvalAltResult,CustomType, TypeBuilder, INT};
 use rhai::packages::Package;
 use rhai_fs::FilesystemPackage;
 use rhai_rand::RandomPackage;
@@ -54,20 +56,34 @@ include!("visuals/layer.rs");
 include!("visuals/sprite.rs");
 include!("ffmpeg.rs");
 
-
 struct App {
     ctx: Xcb,
     pub window: x::Window,
     back_buffer: x::Pixmap,
     width:u16,
     height:u16,
-    players: Layer,
-    overlay: Layer,
     ffms: Vec<(x::Drawable,FfMpeg)>,
-    engine: Rhai,
+    //engine: Rhai,
     style: Style
 }
 
+use lazy_static::lazy_static;
+use std::sync::Mutex;
+
+lazy_static! {
+    static ref all_layers: Mutex<HashMap<String,Layer>> = Mutex::new(HashMap::new());
+}
+
+#[macro_export]
+macro_rules! layer_ref {
+    () => { all_layers.lock().unwrap(); }
+}
+#[macro_export]
+macro_rules! layer {
+    ($x:expr,$y:expr) => {
+        { $x.get($y).unwrap() }
+    }
+}
 impl App {
     fn new(w:u16,h:u16)-> Self {
         let mut ctx = Xcb::new();
@@ -76,9 +92,7 @@ impl App {
         ctx.prepare(window);
         
         let style = Style::new(&ctx,"common");
-        let players = Layer::new("media-quad.view", &mut ctx, window,0,0,w,h);
-        let overlay = Layer::new("osd.view", &mut ctx, window,0,0,w,h);
-        let engine = Rhai::new();
+        //let engine = Rhai::new();
         
         Self {
             width:w,
@@ -86,10 +100,8 @@ impl App {
             ctx,
             window,
             back_buffer,
-            players,
-            overlay,
             ffms: vec![],
-            engine,
+            //engine,
             style
         }
     }
@@ -98,10 +110,12 @@ impl App {
     }
     fn prepare(&mut self) {
         FfMpeg::init();
-        
-        self.players.fit_all(&self.ctx,&self.style,self.width,self.height);
-        self.overlay.fit_all(&self.ctx,&self.style,self.width,self.height);
-        self.overlay.root_visual.show(&self.ctx);
+
+     //   for l in LAYERS.lock().unwrap().iter_mut() {
+       //     l.1.fit_all(&self.ctx, &self.style, self.width, self.height);
+            //l.1.root_visual.show(&self.ctx);
+        //}
+        //self.engine.register_app(self);
         self.ctx.show(self.window);
     }
     fn idle(&self) {
@@ -109,57 +123,63 @@ impl App {
         thread::sleep(Duration::from_millis(1));
     }
 
-    fn run(&mut self) {
+    fn run(&mut self,engine:&mut Rhai) {
         let mut ctx = &self.ctx;
         let mut li = 0;
 
+        all_layers.lock().unwrap().insert("players".to_string(),Layer::new("media-quad.view", &mut ctx, self.window,0,0,self.width,self.height));
+        all_layers.lock().unwrap().insert("overlay".to_string(),Layer::new("osd.view", &mut ctx, self.window,0,0,self.width,self.height));
         loop {
+            all_layers.lock().unwrap()["overlay"].root_visual.show(ctx);
+
             let ev = ctx.wait_event();
             li+=1;
             match ev.code {
                 XcbEvent::NONE => {
-                    let medias  = self.players.select("media");
-                    let mut idx = 0;
-                    let bbd = Drawable::Pixmap(self.back_buffer);
-                    for mut f in self.ffms.iter_mut() {
-                        let m = &medias[idx];
-                        idx += 1;
-                        if f.1.wait_events(ctx) {
-                            if f.1.dst != x::Drawable::none() {
-                                ctx.copy(ctx.gc, f.1.dst, bbd, 0, 0, m.x, m.y, m.width, m.height);
-                            }
-                        } else {
-                            loop {
-                                let file = &self.engine.exec(&m.content);
-                                let inp = FfMpeg::open(file);
-                                if inp.is_ok() {
-                                    f.1 = FfMpeg::new(ctx, inp.unwrap(), m.width as u32,m.height as u32);
-                                    break; 
+                        let mut idx = 0;
+                        let bbd = Drawable::Pixmap(self.back_buffer);
+                        let l = &all_layers.lock().unwrap()["players"];
+                        for mut f in self.ffms.iter_mut() {
+                            idx += 1;
+                            if f.1.wait_events(ctx) {
+                                let m = l.select("media")[idx];
+                                if f.1.dst != x::Drawable::none() {
+                                    ctx.copy(ctx.gc, f.1.dst, bbd, 0, 0, m.x, m.y, m.width, m.height);
+                                }
+                            } else {
+                                let m = l.select("media")[idx];
+                                loop {
+                                    let file = &engine.exec(&m.content);
+                                    let inp = FfMpeg::open(file);
+                                    if inp.is_ok() {
+                                        f.1 = FfMpeg::new(inp.unwrap(), m.width as u32, m.height as u32);
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
-                    let bbw = Drawable::Window(self.window);
-                    ctx.copy(ctx.gc, bbd, bbw, 0, 0, 0, 0, self.width, self.height);
+                        let bbw = Drawable::Window(self.window);
+                        ctx.copy(ctx.gc, bbd, bbw, 0, 0, 0, 0, self.width, self.height);
+                        let l = &all_layers.lock().unwrap()["overlay"];
+                        let mut icons = l.select("i");
+                        icons.extend(l.select("lbl"));
+                        for vi in icons {
+                            let wd = Drawable::Window(vi.window);
 
-                    let mut icons = self.overlay.select("i");
-                    icons.extend(self.overlay.select("lbl"));
-                    for vi in icons {
-                        let wd = Drawable::Window(vi.window);
-                        
-                        if vi.inv_mask != x::Pixmap::none() {
-                            let vd = Drawable::Pixmap(vi.buf);
-                            let gc = ctx.new_gc(vd,vi.bg,vi.fg);
-                            let mgc = ctx.new_masked_gc(wd,vi.mask,vi.fg,vi.bg);
-                            let mgc_i = ctx.new_masked_gc(wd,vi.inv_mask,vi.fg,vi.bg);
+                            if vi.inv_mask != x::Pixmap::none() {
+                                let vd = Drawable::Pixmap(vi.buf);
+                                let gc = ctx.new_gc(vd, vi.bg, vi.fg);
+                                let mgc = ctx.new_masked_gc(wd, vi.mask, vi.fg, vi.bg);
+                                let mgc_i = ctx.new_masked_gc(wd, vi.inv_mask, vi.fg, vi.bg);
 
-                            ctx.rect(gc,wd,0,0,vi.width,vi.height);
-                            ctx.copy(mgc_i, bbd, wd, vi.ax, vi.ay, 0, 0, vi.width, vi.height);
-                            ctx.copy(mgc, vd, wd, 0, 0, 0, 0, vi.width, vi.height);
-                        } else if vi.buf != x::Pixmap::none() {
-                            ctx.copy(ctx.gc, Drawable::Pixmap(vi.buf), wd, 0, 0, 0, 0, vi.width, vi.height);
+                                ctx.rect(gc, wd, 0, 0, vi.width, vi.height);
+                                ctx.copy(mgc_i, bbd, wd, vi.ax, vi.ay, 0, 0, vi.width, vi.height);
+                                ctx.copy(mgc, vd, wd, 0, 0, 0, 0, vi.width, vi.height);
+                            } else if vi.buf != x::Pixmap::none() {
+                                ctx.copy(ctx.gc, Drawable::Pixmap(vi.buf), wd, 0, 0, 0, 0, vi.width, vi.height);
+                            }
                         }
-                    }
+
                     self.idle();
                 }
                 XcbEvent::RESIZE => {
@@ -172,18 +192,21 @@ impl App {
                         ctx.map_bg(self.window,self.back_buffer);
 
                         //ctx.map_bg(self.window,s);
-                        self.overlay.fit_all(ctx,&self.style,self.width,self.height);
-                        self.players.fit_all(ctx,&self.style,self.width,self.height);
-
-                        let medias  = self.players.select("media");
+                        for l in all_layers.lock().unwrap().iter_mut() {
+                            l.1.fit_all(ctx,&self.style,self.width,self.height);
+                        }
+                        //all_layers.get_mut("overlay").unwrap().fit_all(ctx,&self.style,self.width,self.height);
+                        //players.fit_all(ctx,&self.style,self.width,self.height);
+                        let l = &all_layers.lock().unwrap()["players"];
+                        let medias = l.select("media");
                    //     println!("{:?}",medias.len());
                         if self.ffms.is_empty() {
                             for m in medias {
                                 loop {
-                                    let file = &self.engine.exec(&m.content);
+                                    let file = &engine.exec(&m.content);
                                     let inp = FfMpeg::open(file);
                                     if inp.is_ok() {
-                                        self.ffms.push((Drawable::Window(m.window), FfMpeg::new(ctx, inp.unwrap(), m.width as u32, m.height as u32)));
+                                        self.ffms.push((Drawable::Window(m.window), FfMpeg::new(inp.unwrap(), m.width as u32, m.height as u32)));
                                         break;
                                     }
                                 }

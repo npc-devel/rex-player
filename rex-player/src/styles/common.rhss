@@ -5,7 +5,7 @@ root {
 icon {
     width: 64px;
     height: 64px;
-    fg: #8811ff;
+    fg: #ff11ff;
     bg: transparent;
 }
 

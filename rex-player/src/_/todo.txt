@@ -1,7 +1,10 @@
 scene class?
 audio player
 //transparant icons
-fonts
+//fonts
+click events
+overflow free seek
+file meta filter
 
 precreate all drawables
 auto size <> to content
@@ -12,10 +15,7 @@ video frame timing
 --- multithread
 optimize
 more use of ?
-click events
 hover
-overflow free seek
-file meta filter
 logging
 settings
 file cleanup

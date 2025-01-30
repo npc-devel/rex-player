@@ -71,7 +71,14 @@ macro_rules! vismap {
 macro_rules! winmap {
     ()=> { HashMap<x::Window,u64> }
 }
-
+#[macro_export]
+macro_rules! laymap {
+    ()=> { HashMap<String,Layer> }
+}
+#[macro_export]
+macro_rules! domlaymap {
+    ()=> { HashMap<String,DomLayer> }
+}
 #[macro_export]
 macro_rules! resmap {
     ()=> { HashMap<u32,x::Pixmap> }

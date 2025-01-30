@@ -1,11 +1,19 @@
-#[derive(Clone)]
-struct Visual {
+#[derive(Clone, CustomType)]
+pub struct Visual {
     x:i16,
     y:i16,
+    iax:i16,
+    iay:i16,
     ax:i16,
     ay:i16,
     width:u16,
     height:u16,
+    lx:i16,
+    ly:i16,
+    lwidth:u16,
+    lheight:u16,
+    pwidth:u16,
+    pheight:u16,
     inv_mask: x::Pixmap,
     mask: x::Pixmap,
     buf: x::Pixmap,
@@ -19,6 +27,129 @@ struct Visual {
 }
 
 impl Visual {
+    fn set_content(&mut self, ctx:&Xcb, style:&Style, mut value: &str) {
+        if value.len() > 50 {
+            value = &value[0..50];
+        }
+        self.content = value.to_string();
+
+        match self.tag.as_str() {
+            "lbl" => {
+                let mut pad:i16 = -1;
+                let line_h = 64;
+                let fnt = style.fonts.get("_").unwrap();
+                let (mut sw,sh) = fnt.measure_row(&self.content,self.width, self.height);
+                let yo = (line_h-sh as i16)/2;
+                if pad == -1 { pad = yo; }
+                sw += 2*pad as u16;
+                self.width = sw;
+                self.height = line_h as u16;
+                self.buf = ctx.new_pixmap(self.width,self.height);
+                fnt.row(ctx,self.buf,&self.content,pad,yo,self.width, self.height);
+                self.mask = ctx.new_mask(self.width as i16, self.height as i16);
+                fnt.mask(ctx,self.mask,&self.content,pad,yo,false,self.width, self.height);
+                self.inv_mask = ctx.new_mask(self.width as i16, self.height as i16);
+                fnt.mask(ctx,self.inv_mask,&self.content,pad,yo,true,self.width, self.height);
+            }
+            _ => {}
+        }
+        for a in self.attrs.clone().iter() {
+            let aa = a.1.split(".").into_iter().collect::<Vec<&str>>();
+
+            match a.0.as_str() {
+                "fg" => {
+                    self.fg = u32::from_str_radix(&a.1, 16).unwrap();
+                }
+                "bg" => {
+                    self.bg = u32::from_str_radix(&a.1, 16).unwrap();
+                    ctx.bg(self.window,self.bg);
+                }
+                "w" => {
+                    self.width = Self::calc(&a.1,self.pwidth,self.pheight);
+                }
+                "h" => {
+                    self.height = Self::calc(&a.1,self.pwidth,self.pheight);
+                }
+                "l" => {
+                    if aa.len()>1 {
+                        if aa[0]=="l" {
+                            self.x = Self::anchor(&aa[1], self.lwidth + self.lx as u16);
+                        } else {
+                            self.x = Self::anchor(&aa[1], self.pwidth);
+                        }
+                    } else {
+                        self.x = Self::calc(&a.1,self.pwidth,self.pheight) as i16;
+                    }
+                }
+                "c" => {
+                    if aa.len()>1 {
+                        self.y = Self::anchor(&aa[1], self.pheight) - self.height as i16/2;;
+                    } else {
+                        self.y = Self::calc(&a.1,self.pwidth,self.pheight) as i16 - self.height as i16/2;
+                    }
+                }
+                "m" => {
+                    if aa.len()>1 {
+                        self.x = Self::anchor(&aa[1], self.pwidth) - self.width as i16/2;;
+                    } else {
+                        self.x = Self::calc(&a.1,self.pwidth,self.pheight) as i16 - self.width as i16/2;
+                    }
+                }
+                "r" => {
+                    if aa.len()>1 {
+                        self.x = Self::anchor(&aa[1],self.pwidth) - self.width as i16;
+                    } else {
+                        self.x = Self::calc(&a.1,self.pwidth,self.pheight) as i16 - self.width as i16;
+                    }
+                }
+                "t" => {
+                    if aa.len()>1 {
+                        self.y = Self::anchor(&aa[1],self.pheight);
+                    } else {
+                        self.y = Self::calc(&a.1,self.pwidth,self.pheight) as i16;
+                    }
+                }
+                "b" => {
+                    if aa.len()>1 {
+                        self.y = Self::anchor(&aa[1],self.pheight) - self.height as i16;
+                    } else {
+                        self.y = Self::calc(&a.1,self.pwidth,self.pheight) as i16 - self.height as i16;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.ax = self.iax + self.x;
+        self.ay = self.iay + self.y;
+
+        match self.tag.as_str() {
+            "lbl" => {}
+            "i" => {
+                self.mask = ctx.mask_from_file(&self.content,8, false, self.width as i16, self.height as i16);
+                self.inv_mask = ctx.mask_from_file(&self.content,8, true, self.width as i16, self.height as i16);
+                self.buf = ctx.img_from_alpha(&self.content,8,self.width as i16, self.height as i16,self.bg,self.fg);
+            }
+            "media" => {
+                //   let drw = Drawable::Window(self.window.clone());
+                let vwidth = self.width.clone();
+                let vheight = self.height.clone();
+                let map = ctx.new_pixmap(vwidth,vheight);
+                self.buf = map;
+            }
+            _ => {
+                let fs = self.clone();
+                let mut l = &fs;
+                for c in self.children.iter_mut() {
+                    c.anchor_fit_to(ctx,style,l,&fs,self.ax,self.ay);
+                    l = c;
+                }
+            }
+        }
+
+        ctx.pos(self.window,self.x,self.y);
+        ctx.size(self.window,self.width,self.height);
+    }
     fn calc(def:&str,mw:u16,mh:u16)->u16 {
         let l = def.len();
         let u = &def[l-2..l];
@@ -36,13 +167,30 @@ impl Visual {
             _ => max as i16
         }
     }
+    pub fn get_mut(&mut self, sel:&str)->Option<&mut Visual> {
+        if self.tag==sel { return Option::from(self); }
+        let ida = self.attrs.get("id");
 
+        if ida.is_some() {
+            if "#".to_string() + ida.unwrap().as_str()==sel { return Option::from(self); }
+        }
+
+        for c in self.children.iter_mut() {
+            let r = c.get_mut(sel);
+            if r.is_some() { return r; }
+        }
+
+        Option::None
+    }
     pub fn select(&self, sel:&str)->Vec<&Visual> {
         let mut ret = vec![];
+
+        if self.tag==sel { ret.push(self); }
+
         for c in self.children.iter() {
             ret.extend(c.select(sel));
         }
-        if self.tag==sel { ret.push(self); }
+
         ret
     }
 
@@ -59,10 +207,18 @@ impl Visual {
         Self {
             x: 0,
             y: 0,
+            iax: 0,
+            iay: 0,
             ax: 0,
             ay: 0,
             width: 64,
             height: 64,
+            lx: 0,
+            ly: 0,
+            lwidth: 64,
+            lheight: 64,
+            pwidth: 64,
+            pheight: 64,
             inv_mask:x::Pixmap::none(),
             mask: x::Pixmap::none(),
             buf: x::Pixmap::none(),
@@ -86,116 +242,17 @@ impl Visual {
     pub fn anchor_fit_to(&mut self, ctx:&Xcb, style:&Style, l:&Visual,p:&Visual,ax:i16,ay:i16) {
         self.x = 0;
         self.y = 0;
-        for a in self.attrs.clone().iter() {
-            let aa = a.1.split(".").into_iter().collect::<Vec<&str>>();
-            match a.0.as_str() {
-                "fg" => {
-                    self.fg = u32::from_str_radix(&a.1, 16).unwrap();
-                }
-                "bg" => {
-                    self.bg = u32::from_str_radix(&a.1, 16).unwrap();
-                    ctx.bg(self.window,self.bg);
-                }
-                "w" => {
-                    self.width = Self::calc(&a.1,p.width,p.height);
-                }
-                "h" => {
-                    self.height = Self::calc(&a.1,p.width,p.height);
-                }
-                "l" => {
-                    if aa.len()>1 {
-                        if aa[0]=="l" {
-                            self.x = Self::anchor(&aa[1], l.width + l.x as u16);
-                        } else {
-                            self.x = Self::anchor(&aa[1], p.width);
-                        }
-                    } else {
-                        self.x = Self::calc(&a.1,p.width,p.height) as i16;
-                    }
-                }
-                "c" => {
-                    if aa.len()>1 {
-                        self.y = Self::anchor(&aa[1], p.height) - self.height as i16/2;;
-                    } else {
-                        self.y = Self::calc(&a.1,p.width,p.height) as i16 - self.height as i16/2;
-                    }
-                }
-                "m" => {
-                    if aa.len()>1 {
-                        self.x = Self::anchor(&aa[1], p.width) - self.width as i16/2;;
-                    } else {
-                        self.x = Self::calc(&a.1,p.width,p.height) as i16 - self.width as i16/2;
-                    }
-                }
-                "r" => {
-                    if aa.len()>1 {
-                        self.x = Self::anchor(&aa[1],p.width) - self.width as i16;
-                    } else {
-                        self.x = Self::calc(&a.1,p.width,p.height) as i16 - self.width as i16;
-                    }
-                }
-                "t" => {
-                    if aa.len()>1 {
-                        self.y = Self::anchor(&aa[1],p.height);
-                    } else {
-                        self.y = Self::calc(&a.1,p.width,p.height) as i16;
-                    }
-                }
-                "b" => {
-                    if aa.len()>1 {
-                        self.y = Self::anchor(&aa[1],p.height) - self.height as i16;
-                    } else {
-                        self.y = Self::calc(&a.1,p.width,p.height) as i16 - self.height as i16;
-                    }
-                }
-                _ => {}
-            }
-        }
-        self.ax = ax + self.x;
-        self.ay = ay + self.y;
+        self.iax = ax;
+        self.iay = ay;
+        self.lx = l.x;
+        self.ly = l.y;
+        self.lwidth = l.width;
+        self.lheight = l.height;
+        self.pwidth = p.width;
+        self.pheight = p.height;
 
-        match self.tag.as_str() {
-            "lbl" => {
-                let mut pad:i16 = -1;
-                let line_h = 64;
-                let fnt = style.fonts.get("_").unwrap();
-                let (mut sw,sh) = fnt.measure_row(&self.content,self.width, self.height);
-                let yo = (line_h-sh as i16)/2;
-                if pad == -1 { pad = yo; }
-                sw += 2*pad as u16;
-                self.width = sw;
-                self.height = line_h as u16;
-                
-                self.buf = ctx.new_pixmap(self.width,self.height);
-                fnt.row(ctx,self.buf,&self.content,pad,yo,self.width, self.height);
-                self.mask = ctx.new_mask(self.width as i16, self.height as i16);
-                fnt.mask(ctx,self.mask,&self.content,pad,yo,false,self.width, self.height);
-                self.inv_mask = ctx.new_mask(self.width as i16, self.height as i16);
-                fnt.mask(ctx,self.inv_mask,&self.content,pad,yo,true,self.width, self.height);
-            }
-            "i" => {
-                self.mask = ctx.mask_from_file(&self.content,8, false, self.width as i16, self.height as i16);
-                self.inv_mask = ctx.mask_from_file(&self.content,8, true, self.width as i16, self.height as i16);
-                self.buf = ctx.img_from_alpha(&self.content,8,self.width as i16, self.height as i16,self.bg,self.fg);
-            }
-            "media" => {
-             //   let drw = Drawable::Window(self.window.clone());
-                let vwidth = self.width.clone();
-                let vheight = self.height.clone();
-                let map = ctx.new_pixmap(vwidth,vheight);
-                self.buf = map;
-            }
-            _ => {
-                let fs = self.clone();
-                let mut l = &fs;
-                for c in self.children.iter_mut() {
-                    c.anchor_fit_to(ctx,style,l,&fs,self.ax,self.ay);
-                    l = c;
-                }
-            }
-        }
+        self.set_content(ctx,style,&self.content.clone());
 
-        ctx.pos(self.window,self.x,self.y);
-        ctx.size(self.window,self.width,self.height);
+
     }
 }
