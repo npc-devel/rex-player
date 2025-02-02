@@ -30,14 +30,15 @@ use ffmpeg::format::sample::Type as SampleType;
 use ffmpeg_next::decoder::audio;
 use ffmpeg::format::{Sample as FFmpegSample,input, Pixel};
 use ffmpeg::media::Type;
-use ffmpeg::software::scaling::{context::Context, flag::Flags};
-use ffmpeg::software::resampling::{context::Context as ResamplingContext};
+use ffmpeg::software::scaling::{context::Context as VideoContext, flag::Flags};
+use ffmpeg::software::resampling::{context::Context as AudioContext};
 use ffmpeg::util::frame::video::Video;
 use ffmpeg::util::frame::audio::Audio;
 use ffmpeg_next::codec::profile::JPEG2000::CStreamNoRestriction;
 use ffmpeg_next::decoder::video;
 use ffmpeg_next::{software, Error};
 use ffmpeg_next::format::context::input;
+use ffmpeg_next::format::context::Input;
 
 use image::{DynamicImage, Rgba, ImageReader, EncodableLayout};
 use image::GenericImageView;
@@ -57,7 +58,9 @@ include!("windowing/xcb.rs");
 include!("visuals/style.rs");
 include!("visuals/layer.rs");
 include!("visuals/sprite.rs");
-include!("ffmpeg.rs");
+include!("player/audio.rs");
+include!("player/video.rs");
+include!("player/player.rs");
 
 fn main() {
     let mut e = Rhai::new(1280,720);

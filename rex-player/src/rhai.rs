@@ -1,3 +1,5 @@
+
+
 struct Rhai {
     /*ctx: Xcb,
     pub window: x::Window,
@@ -91,7 +93,7 @@ impl DomApp {
         ctx.show(window);
 
         let style = Style::new(&ctx, "common");
-        let mut ffms: Vec<(x::Drawable, FfMpeg)> = vec![];
+        let mut ffms: Vec<(x::Drawable, Player)> = vec![];
         let mut li = 0;
 
         let mut all: laymap!() = nmap!();
@@ -109,34 +111,25 @@ impl DomApp {
             match ev.code {
                 XcbEvent::NONE => {
                     let mut idx = 0;
+                    let bbw = Drawable::Window(window);
                     let bbd = Drawable::Pixmap(back_buffer);
-                    let l = all.get("players").unwrap().clone();
-                    let mut needs_fit: bool = false;
+                    ctx.copy(ctx.gc, bbd, bbw, 0, 0, 0, 0, width, height);
+
+              //      let l = all.get("players").unwrap().clone();
+                   /* let mut needs_fit: bool = false;
                     for mut f in ffms.iter_mut() {
-                        if f.1.wait_events(ctx) {
                             let m = l.select("media")[idx];
                             if f.1.dst != x::Drawable::none() {
                                 ctx.copy(ctx.gc, f.1.dst, bbd, 0, 0, m.x, m.y, m.width, m.height);
                             }
-                        } else {
-                            loop {
-                                let file = self.eval(ctx,&style,&mut all,&l.select("media")[idx].content.clone());
-                                let inp = FfMpeg::open(&file);
-                                if inp.is_ok() {
-                                    let m = l.select("media")[idx];
-                                    f.1 = FfMpeg::new(inp.unwrap(), m.width as u32, m.height as u32);
-                                    needs_fit = true;
-                                    break;
-                                }
-                            }
                         }
                         idx += 1;
-                    }
+                    }*/
                 //    if needs_fit {
                   //      all.get_mut("overlay").unwrap().fit_all(ctx,&style,width,height);
                    // } else {
-                        let bbw = Drawable::Window(window);
-                        ctx.copy(ctx.gc, bbd, bbw, 0, 0, 0, 0, width, height);
+                   //     let bbw = Drawable::Window(window);
+
                         let l = &all["overlay"];
                         let mut icons = l.select("i");
                         icons.extend(l.select("lbl"));
@@ -168,6 +161,7 @@ impl DomApp {
                         height = ev.height;
 
                         back_buffer = ctx.new_pixmap(width, height);
+
                         //ctx.map_bg(window, back_buffer);
 
                         //ctx.map_bg(self.window,s);
@@ -183,9 +177,35 @@ impl DomApp {
                             for m in medias {
                                 loop {
                                     let file = &self.eval(ctx,&style,&mut all,&m.content);
-                                    let inp = FfMpeg::open(file);
-                                    if inp.is_ok() {
-                                        ffms.push((Drawable::Window(m.window), FfMpeg::new(inp.unwrap(), m.width as u32, m.height as u32)));
+                                    let mx = m.x;
+                                    let my = m.y;
+                                    let mw = m.width;
+                                    let mh = m.height;
+
+                                    let dst = ctx.new_pixmap(mw as u16, mh as u16);
+                                    let ply = Player::start(PathBuf::from(file),move|frame,sco|{
+                                            let mut scc = sco.as_mut().unwrap();
+
+                                            let mut rgb_frame = Video::empty();
+                                            scc.scalar.run(&frame, &mut rgb_frame).unwrap();
+                                            let data = rgb_frame.data(0);
+                                            let pl = (data.len() as u32/4) as u16;
+                                            scc.rh = rgb_frame.plane_height(0) as u16;
+                                            scc.rw = (pl/scc.rh) as u16;
+
+                                            let expected_bytes = (4*mw as u32*mh as u32) as usize;
+                                            let csd: &[u8] = bytemuck::cast_slice(&data[0..expected_bytes]);
+                                            //csd[0..expected_bytes].copy_from_slice(&csd[0..]);
+                                            //csd[expected_bytes..].fill(u8::EQUILIBRIUM);
+                                            let bbd = Drawable::Pixmap(back_buffer);
+                                            let sbd = Drawable::Pixmap(scc.dst);
+                                            let gc = scc.ctx.new_gc(bbd, mw as u32, mh as u32);
+                                            scc.ctx.fill(gc, scc.drw, csd, 0, 0, mw, mh);
+                                            scc.ctx.copy(gc, sbd, bbd, 0, 0, mx, my, mw, mh);
+
+                                    },|isplaying|{},mw as u32,mh as u32,dst);
+                                    if ply.is_ok() {
+                                        ffms.push((Drawable::Window(m.window), ply.ok().unwrap()));
                                         break;
                                     }
                                 }
@@ -195,7 +215,7 @@ impl DomApp {
                             for m in medias {
                                 let fo = ffms.get_mut(idx);
                                 if fo.is_some() {
-                                    fo.unwrap().1.rescale(m.width as u32, m.height as u32);
+                                    //fo.unwrap().1.rescale(m.width as u32, m.height as u32);
                                 }
                                 idx += 1;
                             }
@@ -295,7 +315,7 @@ impl Rhai {
     }
     
     fn prepare(&mut self) {
-        FfMpeg::init();
+        //FfMpeg::static_init();
         //self.ctx.show(self.window);
     }
     //fn idle(&self) {

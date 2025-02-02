@@ -14,3 +14,8 @@ rhai-fs = { version="0.1.3", features=["sync"] }
 rhai-rand = "0.1.6"
 xcb = { version="1.5.0", features=["present","randr"] }
 lazy_static = "1.5.0"
+bytemuck = "1.21.0"
+smol = "2.0.2"
+futures = "0.3.31"
+ringbuf = "0.3.3"
+anyhow = "1.0.95"

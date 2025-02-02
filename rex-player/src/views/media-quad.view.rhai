@@ -1,2 +1,2 @@
-<media w=50pw h=50ph>??=next("XXX","shuffle")??</><media w=50pw h=50ph l=50pw>??=next("XXX","shuffle")??</>
-<media t=50ph w=50pw h=50ph>??=next("XXX","shuffle")??</><media t=50ph l=50pw w=50pw h=50ph>??=next("XXX","shuffle")??</>
+<media w=50pw h=50ph>??=next("Videos/XXX","shuffle")??</><media w=50pw h=50ph l=50pw>??=next("Videos/XXX","shuffle")??</>
+<media t=50ph w=50pw h=50ph>??=next("Videos/XXX","shuffle")??</><media t=50ph l=50pw w=50pw h=50ph>??=next("Videos/XXX","shuffle")??</>

@@ -37,7 +37,7 @@ fn file_name(path) {
 }
 
 fn next(lib,mode) {
-    let base = "/home/ppc/Videos/" + lib;
+    let base = "/home/ppc/" + lib;
     let v_dirs = dirs(base,[]);
 
     let all = [];
@@ -49,7 +49,7 @@ fn next(lib,mode) {
 
     let ai = rand() % all.len;
     const file = all[ai].to_string();
-    if lib == "XXX" {
+    if lib == "Videos/XXX" {
         return update_ele("overlay","#title","content","XXX") + file;
     } else {
         return update_ele("overlay","#title","content",file_name(file)) + file;
@@ -58,7 +58,7 @@ fn next(lib,mode) {
 
 fn startup() {
     let app = new_app();
-    app.load_layer("players","media-quad.view");
+    app.load_layer("players","media-full.view");
     app.load_layer("overlay","osd.view");
 
     app.main_loop(1280,720);
