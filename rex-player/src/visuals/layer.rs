@@ -17,13 +17,13 @@ impl Layer {
             n.window.resource_id() == res
         })
     }
-    pub fn fit_all(&mut self, ctx:&Xcb, style:&Style, w:u16, h:u16) {
+    pub fn fit_all(&mut self,drw:x::Drawable,ctx:&Xcb, style:&Style, w:u16, h:u16) {
         self.root_visual.width = w;
         self.root_visual.height = h;
         let mut cs = self.root_visual.clone();
         let mut last = &cs;
         for c in self.root_visual.children.iter_mut() {
-            c.anchor_fit_to(ctx,style,&last,&cs,0,0);
+            c.anchor_fit_to(drw,ctx,style,&last,&cs,0,0);
             last = c;
         }
     }

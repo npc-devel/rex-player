@@ -64,7 +64,5 @@ include!("player/player.rs");
 
 fn main() {
     let mut e = Rhai::new(1280,720);
-    e.prepare();
     e.run();
-    e.clean_up();
 }

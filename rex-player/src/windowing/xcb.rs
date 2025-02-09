@@ -18,8 +18,12 @@ struct Xcb {
     depth: u8,
     root: x::Window,
     visual_id: x::Visualid,
+    s_width: u16,
+    s_height: u16
+    /*,
     gc: x::Gcontext,
-    drawable: Drawable
+    drawable: Drawable*/
+
 }
 
 struct XcbEvent {
@@ -48,7 +52,7 @@ impl XcbEvent {
 }
 
 impl Xcb {
-    fn new_mask(&self,width:i16,height:i16)->x::Pixmap {
+    fn new_mask(&self,drawable:x::Drawable,width:i16,height:i16)->x::Pixmap {
         let bpad = (32 - (width % 32))%32;
         let paddedw = width + bpad;
 
@@ -56,13 +60,13 @@ impl Xcb {
         self.request(&x::CreatePixmap{
             depth: 1,
             pid: pix,
-            drawable: self.drawable,
+            drawable,
             width: paddedw as u16,
             height: height as u16
         });
         pix
     }
-    fn mask_from_file(&self,file:&str,pad:u16,inverted:bool,nw:i16,nh:i16)->x::Pixmap {
+    fn mask_from_file(&self,drawable:x::Drawable,file:&str,pad:u16,inverted:bool,nw:i16,nh:i16)->x::Pixmap {
         let mut img = image::open(asset!(file,"png")).unwrap();
         let mut width = img.width() as u16;
         let mut height = img.height() as u16;
@@ -86,7 +90,7 @@ impl Xcb {
         self.request(&x::CreatePixmap{
             depth: 1,
             pid: pix,
-            drawable: self.drawable,
+            drawable,
             width:paddedw,
             height
         });
@@ -136,7 +140,7 @@ impl Xcb {
         });
         pix
     }
-    fn new_img(&self,file:&str,pad:u16,nw:i16,nh:i16)->x::Pixmap {
+    fn new_img(&self,drawable:x::Drawable,file:&str,pad:u16,nw:i16,nh:i16)->x::Pixmap {
         let mut img = image::open(asset!(file,"png")).unwrap();
         let mut width = img.width() as u16;
         let mut height = img.height() as u16;
@@ -156,7 +160,7 @@ impl Xcb {
         self.request(&x::CreatePixmap{
             depth: 24,
             pid: pix,
-            drawable: self.drawable,
+            drawable,
             width,
             height
         });
@@ -175,7 +179,7 @@ impl Xcb {
         });
         pix
     }
-    fn img_from_alpha(&self,file:&str,pad:u16,nw:i16,nh:i16,bg:u32,fg:u32)->x::Pixmap {
+    fn img_from_alpha(&self,drawable:x::Drawable,file:&str,pad:u16,nw:i16,nh:i16,bg:u32,fg:u32)->x::Pixmap {
   //      println!("backgrounded {file}");
         let mut img = image::open(asset!(file,"png")).unwrap();
         let mut width = img.width() as u16;
@@ -194,7 +198,7 @@ impl Xcb {
         self.request(&x::CreatePixmap{
             depth: 24,
             pid: pix,
-            drawable: self.drawable,
+            drawable,
             width,
             height
         });
@@ -229,12 +233,17 @@ impl Xcb {
         });
         pix
     }
-    fn new_pixmap(&self,width:u16,height:u16)->x::Pixmap {
+
+    fn drop_pixmap(&self, pixmap: x::Pixmap) {
+        self.request(&x::FreePixmap { pixmap });
+
+    }
+    fn new_pixmap(&self,drawable:x::Drawable,width:u16,height:u16)->x::Pixmap {
         let pix:x::Pixmap = self.new_id::<x::Pixmap>();
         self.request(&x::CreatePixmap{
             depth: self.depth,
             pid: pix,
-            drawable: self.drawable,
+            drawable,
             width,
             height
         });
@@ -350,7 +359,7 @@ impl Xcb {
         loop {
             let eventr = self.conn.poll_for_event();
             if eventr.is_err() {
-                thread::sleep(Duration::from_millis(10));
+                thread::sleep(std::time::Duration::from_millis(10));
                 continue;
             }
             let evento = eventr.unwrap();
@@ -405,17 +414,18 @@ impl Xcb {
         }
         ret
     }
-    pub fn prepare(&mut self,window:x::Window) {
+    /*pub fn prepare(&mut self,window:x::Window) {
         self.drawable = Drawable::Window(window);
         self.gc = self.new_gc(self.drawable,0xFFFFFFFF,0xFF000000);
-    }
+    }*/
     pub fn new()->Self {
         let (conn,screen_n) = xcb::Connection::connect_with_extensions(None, &[xcb::Extension::Present], &[]).unwrap();
         let setup = conn.get_setup();
         let screen = setup.roots().nth(0 as usize).unwrap();
         let visual_id = screen.root_visual();
         let root = screen.root();
-
+        let s_width = screen.width_in_pixels();
+        let s_height = screen.height_in_pixels();
         Self {
             depth: screen.root_depth(),
             atoms: Atoms::intern_all(&conn).expect("No atoms"),
@@ -423,8 +433,10 @@ impl Xcb {
             screen_n,
             visual_id,
             root,
-            gc: x::Gcontext::none(),
-            drawable: Drawable::None
+            s_width,
+            s_height,
+            //gc: x::Gcontext::none(),
+            //drawable: Drawable::None
         }
     }
     fn new_id<T: xcb::Xid + xcb::XidNew>(&self)->T {

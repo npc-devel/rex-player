@@ -5,7 +5,7 @@ struct Style {
 }
 
 impl Style {
-    pub fn new(ctx:&Xcb,file:&str)->Self {
+    pub fn new(drw:x::Drawable,ctx:&Xcb,file:&str)->Self {
         let raw = style!(file);
         let jdoc = Self::process(&raw);
         let mut dom = json::parse(&jdoc).unwrap();
@@ -20,7 +20,7 @@ impl Style {
         }
         
         let mut fonts : spritemap!() = nmap!();
-        fonts.insert("_".to_string(),Sprite::new(ctx,"fonts/default/31",0xFF0070F5,0xFF000000));
+        fonts.insert("_".to_string(),Sprite::new(drw,ctx,"fonts/default/31",0xFF0070F5,0xFF000000));
             
         Self {
             rules,

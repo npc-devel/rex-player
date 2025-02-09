@@ -1,19 +1,29 @@
-scene class?
-audio player
+//audio player
 //transparant icons
 //fonts
-click events
-overflow free seek
-file meta filter
+//file meta filter
+//video frame timing
+//multithread
 
-precreate all drawables
-auto size <> to content
+click events
+-- mode switch
+-- overflow free seek
+proper shutdown
 style sheet
-cache scaled icons
+muted XXX & bkg audio
+playlist
+
+-- maybe
+voice control
 padding / margins
-video frame timing
---- multithread
-optimize
+auto size <> to content
+scene class
+better output from rhai (json)
+
+-- optimize
+tidy up video class
+cache scaled icons
+precreate all drawables
 more use of ?
 hover
 logging

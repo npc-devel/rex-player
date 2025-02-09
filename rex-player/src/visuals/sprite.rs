@@ -10,7 +10,7 @@ struct Sprite {
 }
 
 impl Sprite {
-    pub fn new(ctx:&Xcb,file:&str,fg:u32,bg:u32)-> Self {
+    pub fn new(drw:x::Drawable,ctx:&Xcb,file:&str,fg:u32,bg:u32)-> Self {
         let ff = asset!(file,"fnt");
         let pf = asset!(file,"png");
         let mf = asset!(file,"met");
@@ -53,12 +53,12 @@ impl Sprite {
                 i_maskd.push(!b8);
             }
         }
-
-        let pix = ctx.new_pixmap(width,height);
+        let gc = ctx.new_gc(drw,0,0);
+        let pix = ctx.new_pixmap(drw,width,height);
         ctx.request(&x::PutImage {
             format: ImageFormat::ZPixmap,
             drawable: Drawable::Pixmap(pix),
-            gc: ctx.gc,
+            gc,
             width,
             height,
             dst_x: 0,
@@ -68,7 +68,7 @@ impl Sprite {
             data: &img.as_bytes(),
         });
 
-        let mask = ctx.new_mask(paddedw as i16,height as i16);
+        let mask = ctx.new_mask(drw,paddedw as i16,height as i16);
         let mgc = ctx.new_gc(Drawable::Pixmap(mask),1,0);
         ctx.request(&x::PutImage {
             format: ImageFormat::ZPixmap,
@@ -82,7 +82,7 @@ impl Sprite {
             depth: 1,
             data: &maskd.as_bytes()
         });
-        let inv_mask = ctx.new_mask(paddedw as i16,height as i16);
+        let inv_mask = ctx.new_mask(drw,paddedw as i16,height as i16);
         ctx.request(&x::PutImage {
             format: ImageFormat::ZPixmap,
             drawable: Drawable::Pixmap(inv_mask),
@@ -143,7 +143,8 @@ impl Sprite {
         (x as u16,mh as u16)
     }
     
-    fn row(&self,ctx:&Xcb,buf:x::Pixmap,cnt:&str,mut x:i16,mut y:i16,w:u16,h:u16) {
+    fn row(&self,drw:x::Drawable,ctx:&Xcb,buf:x::Pixmap,cnt:&str,mut x:i16,mut y:i16,w:u16,h:u16) {
+        let gc = ctx.new_gc(drw,0,0);
         for c in cnt.chars() {
             let key = c as i32;
             if self.map.contains_key(&key) {
@@ -152,7 +153,7 @@ impl Sprite {
                 ctx.dbg_request(&x::CopyArea {
                     src_drawable: x::Drawable::Pixmap(self.pix),
                     dst_drawable: x::Drawable::Pixmap(buf),
-                    gc: ctx.gc,
+                    gc,
                     src_x: *info.get("x").unwrap() as i16,
                     src_y: *info.get("y").unwrap() as i16,
                     dst_x: x + *info.get("xoffset").unwrap() as i16,
@@ -268,7 +269,7 @@ impl Sprite {
         x
     }*/
     
-    fn dump(&self,ctx:&Xcb,win:x::Window) {
+    /*fn dump(&self,ctx:&Xcb,win:x::Window) {
         ctx.request(&x::CopyArea {
             src_drawable: Drawable::Pixmap(self.pix),
             dst_drawable: Drawable::Window(win),
@@ -280,5 +281,5 @@ impl Sprite {
             width: self.width,
             height: self.height
         });
-    }
+    }*/
 }

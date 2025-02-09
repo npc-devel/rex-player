@@ -1,16 +1,7 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 
-
-struct ScalarCtx {
-    ctx: Xcb,
-    scalar: VideoContext,
-    dst: x::Pixmap,
-    drw: x::Drawable,
-    rw: u16,
-    rh: u16
-}
-
+use ffmpeg_next::option::Type::Duration as FDuration;
 
 pub struct VideoPlaybackThread {
     control_sender: smol::channel::Sender<ControlCommand>,
@@ -20,11 +11,11 @@ pub struct VideoPlaybackThread {
 
 impl VideoPlaybackThread {
     pub fn start(
+        start_pts: i64,
+        settings: StreamSettings,
         stream: &ffmpeg_next::format::stream::Stream,
-        mut video_frame_callback: Box<dyn FnMut(&ffmpeg_next::util::frame::Video,&mut Option<ScalarCtx>) + Send>,
-        dst_width: u32,
-        dst_height: u32,
-        dst: x::Pixmap
+        mut video_frame_callback: Box<dyn FnMut(&ffmpeg_next::util::frame::Video) + Send>,
+        sender: smol::channel::Sender<i32>
     ) -> Result<Self, anyhow::Error> {
         let (control_sender, control_receiver) = smol::channel::unbounded();
 
@@ -33,68 +24,52 @@ impl VideoPlaybackThread {
         let decoder_context = ffmpeg_next::codec::Context::from_parameters(stream.parameters())?;
         let mut packet_decoder = decoder_context.decoder().video()?;
 
-        let clock = StreamClock::new(stream);
+
+        let mut clock = StreamClock::new(start_pts,stream);
+        let sen2 = sender.clone();
 
         let receiver_thread =
             std::thread::Builder::new().name("video playback thread".into()).spawn(move || {
                 smol::block_on(async move {
                     let packet_receiver_impl = async {
-                        let mut scc: Option<ScalarCtx> = Option::None;
                         loop {
                             let Ok(packet) = packet_receiver.recv().await else { break };
-
                             smol::future::yield_now().await;
-
                             packet_decoder.send_packet(&packet).unwrap();
 
                             let mut decoded_frame = ffmpeg_next::util::frame::Video::empty();
-
+                    //        let mut fc = 0;
                             while packet_decoder.receive_frame(&mut decoded_frame).is_ok() {
+                                let pts = decoded_frame.pts();
+                                if pts.unwrap_or(0) == 0 { continue }
+
                                 if let Some(delay) =
-                                    clock.convert_pts_to_instant(decoded_frame.pts())
+                                    clock.convert_pts_to_instant(settings.speed_factor,pts)
                                 {
-                                    smol::Timer::after(delay).await;
+                                    if delay.is_zero() { smol::Timer::after(std::time::Duration::from_nanos(100)).await; }
+                                    else {
+                                        smol::Timer::after(delay).await;
+                                    }
                                 }
-                                if scc.is_none() {
-                                    let ctx = Xcb::new();
-                                    let mut scalar = VideoContext::get(
-                                        decoded_frame.format(),
-                                        decoded_frame.width(),
-                                        decoded_frame.height(),
-                                        Pixel::BGRA,
-                                        dst_width,
-                                        dst_height,
-                                        Flags::BILINEAR
-                                    ).unwrap();
-
-                                    let drw = Drawable::Pixmap(dst);
-                                    scc = Option::from(ScalarCtx {
-                                        scalar,
-                                        dst,
-                                        drw,
-                                        rw: 0,
-                                        rh: 0,
-                                        ctx
-                                    });
-                                }
-
-                                video_frame_callback(&decoded_frame,&mut scc);
+                                //fc+=1;
+                                video_frame_callback(&decoded_frame);
                             }
+                          //  println!("{fc} frames received");
                         }
+                        sender.send(Media::EOF).await.unwrap();
                     }
                     .fuse()
                     .shared();
 
                     let mut playing = true;
-
                     loop {
                         let packet_receiver: OptionFuture<_> =
                             if playing { Some(packet_receiver_impl.clone()) } else { None }.into();
 
                         smol::pin!(packet_receiver);
-
                         futures::select! {
                             _ = packet_receiver => {},
+
                             received_command = control_receiver.recv().fuse() => {
                                 match received_command {
                                     Ok(ControlCommand::Pause) => {
@@ -104,14 +79,16 @@ impl VideoPlaybackThread {
                                         playing = true;
                                     }
                                     Err(_) => {
-                                        // Channel closed -> quit
+                                        sender.send(Media::EOF).await.unwrap();
                                         return;
                                     }
                                 }
                             }
                         }
                     }
-                })
+                    //sender.send(Media::EOF).await.unwrap();
+                });
+                sen2.send_blocking(Media::EOF).unwrap();
             })?;
 
         Ok(Self { control_sender, packet_sender, receiver_thread: Some(receiver_thread) })
@@ -120,7 +97,7 @@ impl VideoPlaybackThread {
     pub async fn receive_packet(&self, packet: ffmpeg_next::codec::packet::packet::Packet) -> bool {
         match self.packet_sender.send(packet).await {
             Ok(_) => return true,
-            Err(smol::channel::SendError(_)) => return false,
+            Err(smol::channel::SendError(_)) => return false
         }
     }
 
@@ -139,27 +116,33 @@ impl Drop for VideoPlaybackThread {
 }
 
 struct StreamClock {
+    start_pts: i64,
     time_base_seconds: f64,
-    start_time: std::time::Instant,
+    start_time: Option<std::time::Instant>
 }
 
 impl StreamClock {
-    fn new(stream: &ffmpeg_next::format::stream::Stream) -> Self {
+    fn new(start_pts: i64,stream: &ffmpeg_next::format::stream::Stream) -> Self {
         let time_base_seconds = stream.time_base();
+        //println!("{:?}",time_base_seconds);
+
         let time_base_seconds =
             time_base_seconds.numerator() as f64 / time_base_seconds.denominator() as f64;
 
-        let start_time = std::time::Instant::now();
+        //let start_time = std::time::Instant::now();// + std::time::Duration::from_secs((start_pts as f64 * time_base_seconds) as u64);
 
-        Self { time_base_seconds, start_time }
+        Self { start_pts, time_base_seconds, start_time: Option::None }
     }
 
-    fn convert_pts_to_instant(&self, pts: Option<i64>) -> Option<std::time::Duration> {
-        pts.and_then(|pts| {
-            let pts_since_start =
-                std::time::Duration::from_secs_f64(pts as f64 * self.time_base_seconds);
-            self.start_time.checked_add(pts_since_start)
-        })
-        .map(|absolute_pts| absolute_pts.duration_since(std::time::Instant::now()))
+    fn convert_pts_to_instant(&mut self,speed_factor: f64, mut pts: Option<i64>) -> Option<std::time::Duration> {
+            pts.and_then(|lpts| {
+                let pts = (lpts as f64 * speed_factor) as i64;
+                let secs_since_start = Duration::from_secs_f64(pts as f64 * self.time_base_seconds);
+                if self.start_time.is_none() { self.start_time = Option::from(std::time::Instant::now() - secs_since_start); }
+                self.start_time.unwrap().checked_add(secs_since_start)
+
+            })
+                .map(|absolute_pts| absolute_pts.duration_since(std::time::Instant::now()))
+
     }
 }

@@ -1,4 +1,3 @@
-use ringbuf::producer::Producer;
 use std::pin::Pin;
 
 use bytemuck::Pod;
@@ -10,7 +9,6 @@ use ringbuf::ring_buffer::RbRef;
 use ringbuf::ring_buffer::RbWrite;
 use ringbuf::HeapRb;
 use std::future::Future;
-
 
 pub struct AudioPlaybackThread {
     control_sender: smol::channel::Sender<ControlCommand>,
@@ -162,6 +160,8 @@ struct FFmpegToCPalForwarder {
     resampler: ffmpeg_next::software::resampling::Context,
 }
 
+
+
 impl FFmpegToCPalForwarder {
     fn new<T: Send + Pod + SizedSample + 'static>(
         config: cpal::SupportedStreamConfig,
@@ -171,7 +171,7 @@ impl FFmpegToCPalForwarder {
         output_format: ffmpeg_next::util::format::sample::Sample,
         output_channel_layout: ffmpeg_next::util::channel_layout::ChannelLayout,
     ) -> Self {
-        let buffer = HeapRb::new(4096*8);
+        let buffer = HeapRb::new(1024*8);
         let (sample_producer, mut sample_consumer) = buffer.split();
 
         let cpal_stream = device

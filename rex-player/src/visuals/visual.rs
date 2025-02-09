@@ -27,14 +27,18 @@ pub struct Visual {
 }
 
 impl Visual {
-    fn set_content(&mut self, ctx:&Xcb, style:&Style, mut value: &str) {
-        if value.len() > 50 {
-            value = &value[0..50];
-        }
+    fn set_content(&mut self, drw: x::Drawable, ctx:&Xcb, style:&Style, mut value: &str) {
+        if self.buf != x::Pixmap::none() { ctx.drop_pixmap(self.buf)}
+        if self.mask != x::Pixmap::none() { ctx.drop_pixmap(self.mask)}
+        if self.inv_mask != x::Pixmap::none() { ctx.drop_pixmap(self.inv_mask) }
+
         self.content = value.to_string();
 
         match self.tag.as_str() {
             "lbl" => {
+                if self.content.len() > 50 {
+                    self.content = self.content[0..50].to_string();
+                }
                 let mut pad:i16 = -1;
                 let line_h = 64;
                 let fnt = style.fonts.get("_").unwrap();
@@ -44,12 +48,17 @@ impl Visual {
                 sw += 2*pad as u16;
                 self.width = sw;
                 self.height = line_h as u16;
-                self.buf = ctx.new_pixmap(self.width,self.height);
-                fnt.row(ctx,self.buf,&self.content,pad,yo,self.width, self.height);
-                self.mask = ctx.new_mask(self.width as i16, self.height as i16);
+                self.buf = ctx.new_pixmap(drw,self.width,self.height);
+                fnt.row(drw,ctx,self.buf,&self.content,pad,yo,self.width, self.height);
+                self.mask = ctx.new_mask(drw,self.width as i16, self.height as i16);
                 fnt.mask(ctx,self.mask,&self.content,pad,yo,false,self.width, self.height);
-                self.inv_mask = ctx.new_mask(self.width as i16, self.height as i16);
+                self.inv_mask = ctx.new_mask(drw,self.width as i16, self.height as i16);
                 fnt.mask(ctx,self.inv_mask,&self.content,pad,yo,true,self.width, self.height);
+            }
+            "i"=> {
+                self.buf = ctx.img_from_alpha(drw,&self.content,8,self.width as i16, self.height as i16,self.bg,self.fg);
+                //self.mask = ctx.mask_from_file(drw,&self.content,8, false, self.width as i16, self.height as i16);
+                self.inv_mask = ctx.mask_from_file(drw,&self.content,8, true, self.width as i16, self.height as i16);
             }
             _ => {}
         }
@@ -124,24 +133,12 @@ impl Visual {
         self.ay = self.iay + self.y;
 
         match self.tag.as_str() {
-            "lbl" => {}
-            "i" => {
-                self.mask = ctx.mask_from_file(&self.content,8, false, self.width as i16, self.height as i16);
-                self.inv_mask = ctx.mask_from_file(&self.content,8, true, self.width as i16, self.height as i16);
-                self.buf = ctx.img_from_alpha(&self.content,8,self.width as i16, self.height as i16,self.bg,self.fg);
-            }
-            "media" => {
-                //   let drw = Drawable::Window(self.window.clone());
-                let vwidth = self.width.clone();
-                let vheight = self.height.clone();
-                let map = ctx.new_pixmap(vwidth,vheight);
-                self.buf = map;
-            }
+            "media"|"i"|"lbl" => {}
             _ => {
                 let fs = self.clone();
                 let mut l = &fs;
                 for c in self.children.iter_mut() {
-                    c.anchor_fit_to(ctx,style,l,&fs,self.ax,self.ay);
+                    c.anchor_fit_to(drw,ctx,style,l,&fs,self.ax,self.ay);
                     l = c;
                 }
             }
@@ -239,7 +236,7 @@ impl Visual {
         }
     }
 
-    pub fn anchor_fit_to(&mut self, ctx:&Xcb, style:&Style, l:&Visual,p:&Visual,ax:i16,ay:i16) {
+    pub fn anchor_fit_to(&mut self,drw:x::Drawable,ctx:&Xcb, style:&Style, l:&Visual,p:&Visual,ax:i16,ay:i16) {
         self.x = 0;
         self.y = 0;
         self.iax = ax;
@@ -251,7 +248,7 @@ impl Visual {
         self.pwidth = p.width;
         self.pheight = p.height;
 
-        self.set_content(ctx,style,&self.content.clone());
+        self.set_content(drw,ctx,style,&self.content.clone());
 
 
     }
