@@ -4,6 +4,25 @@ fn rng_rand(lim) {
     return rnd % lim;
 }
 
+fn result_init() {
+    let ret = #{"_":"?"};
+    return ret;
+}
+
+fn result(ret,key,value) {
+    ret[key] = value;
+    return ret;
+}
+
+fn result_complete(ret) {
+    let rs = "";
+    for k in ret.keys() {
+        rs += k + "\n";
+        rs += ret[k] + "\n";
+    }
+    return rs;
+}
+
 fn bad_ext(pbuf) {
     let bad = ["jpg","png","nfo","url","txt","sfv","srr","sub","subs"];
     let bstr = "" + pbuf;
@@ -49,7 +68,6 @@ fn files(dir,ret,sz_lim) {
             if bad_ext(entry) { continue }
             let file = open_file(entry);
             if file.bytes() < sz_lim  { continue }
-            print(entry);
             ret.push(entry);
         }
     }
@@ -85,9 +103,17 @@ fn next(lib,mode) {
     return file;
 }
 
+fn on_event(eve,id,name,x,y,button) {
+    result(eve, id + ".control", "skip-fwd");
+    return "ok";
+}
+
 fn startup() {
     let app = new_app();
+
     app.load_layer("players","media-quad.view");
+    app.load_layer("app","app-playlist.view");
     app.load_layer("overlay","osd.view");
+
     app.main_loop(1280,720);
 }

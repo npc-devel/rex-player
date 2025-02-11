@@ -76,8 +76,8 @@ macro_rules! laymap {
     ()=> { HashMap<String,Layer> }
 }
 #[macro_export]
-macro_rules! domlaymap {
-    ()=> { HashMap<String,DomLayer> }
+macro_rules! domlays {
+    ()=> { Vec<(String,DomLayer)> }
 }
 #[macro_export]
 macro_rules! resmap {

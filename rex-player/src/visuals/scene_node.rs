@@ -1,4 +1,6 @@
-#[derive(Clone)]
+use std::ptr::null;
+
+#[derive(Clone,Debug)]
 struct SceneNode {
     tag: String,
     content: String,
@@ -16,8 +18,10 @@ impl SceneNode {
         if self.attrs.contains_key("fg") { fg = u32::from_str_radix(&self.attrs["fg"],16).unwrap(); }
 
         let mut nwin = x::Window::none();
-        if self.tag == "i" {
-            nwin = ctx.new_sub_window(win,bg)
+        if self.tag == "root" {
+            for c in &self.children {
+                c.build_in(ctx, win, p);
+            }
         } else {
             nwin = ctx.new_sub_window(win,bg)
         }
@@ -49,7 +53,10 @@ impl SceneNode {
         }
         let ts = v["inner"].to_string().trim().to_string();
         let mut ta = ts.split(' ');
-        let tag = ta.nth(0).unwrap().to_string();
+        let mut tag = ta.nth(0).unwrap();
+        if tag == "null" {
+            tag = "root";
+        }
         let mut attrs:strmap!()=HashMap::new();
         let mut l :Option<&str>  = ta.nth(0);
         while l.is_some() {
@@ -58,7 +65,7 @@ impl SceneNode {
             l = ta.nth(0);
         }
         Self {
-            tag,
+            tag:tag.to_string(),
             children,
             content,
             attrs,

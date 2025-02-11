@@ -26,11 +26,17 @@ struct Xcb {
 
 }
 
+#[derive(Debug)]
 struct XcbEvent {
     code: i32,
-    window: x::Window,
-    x:i16,y:i16,width:u16,height:u16
+    window: Window,
+    button: x::Button,
+    x:i16,
+    y:i16,
+    width:u16,
+    height:u16
 }
+
 impl XcbEvent {
     pub const UNKNOWN:i32 = -1;
     pub const NONE:i32 = 0;
@@ -43,6 +49,7 @@ impl XcbEvent {
         Self {
             code: Self::NONE,
             window: x::Window::none(),
+            button: 0,
             x: 0,
             y: 0,
             width: 0,
@@ -376,35 +383,31 @@ impl Xcb {
                     ret.code = XcbEvent::RESIZE;
 
                 }
-                /*   xcb::Event::X(x::Event::MotionNotify(ev))=> {
-                       let win = ev.event();
-                       let bid = self.built.get(&win);
-                       if bid.is_none() { (-1, x::Window::none(), 0, 0) }
-                       else {
-                           let mut parm:i64 = ev.event_x() as i64;
-                           parm = parm << 32;
-                           parm = parm | (ev.event_y() as i64);
-                           //println!("{parm}");
-                           (Nevent::MOTION, win, *bid.unwrap(), parm)
-                       }
-                   }*/
+                X(x::Event::MotionNotify(event))=> {
+                    ret.window = event.event();
+                    ret.x = event.event_x();
+                    ret.y = event.event_y();
+                    ret.code = XcbEvent::MOTION;
+                }
                 X(Expose(event)) => {
                     ret.window = event.window();
                     ret.code = XcbEvent::RENDER;
-
-                }/*
-            X(Event::ButtonPress(event))=>{
-                let win = event.event();
-                let bid = self.built[&win];
-
-                (Self::B_DOWN, win, bid, event.detail() as i64)
-            }*/
+                }
+                X(x::Event::ButtonPress(event))=>{
+                    ret.window = event.event();
+                    ret.button = event.detail();
+                    ret.code = XcbEvent::B_DOWN;
+                }
+                X(x::Event::ButtonRelease(event))=>{
+                    ret.window = event.event();
+                    ret.button = event.detail();
+                    ret.code = XcbEvent::B_UP;
+                }
                 X(x::Event::ButtonRelease(event)) => {
                     ret.window = event.event();
                     ret.x = event.event_x();
                     ret.y = event.event_y();
                     ret.code = XcbEvent::B_UP;
-
                 }
                 _ => {
                     ret.code = XcbEvent::UNKNOWN;
@@ -508,20 +511,6 @@ impl Xcb {
             value_list: &[Cw::BackPixmap(map) ]
         });
     }
-    pub fn fill(&self,gc:Gcontext,drawable:Drawable,b:&[u8],dst_x:i16,dst_y:i16,width:u16,height:u16){
-        self.request(&x::PutImage {
-            format: x::ImageFormat::ZPixmap,
-            drawable,
-            gc,
-            width,
-            height,
-            dst_x,
-            dst_y,
-            left_pad: 0,
-            depth: self.depth,
-            data: &b.as_ref()
-        });
-    }
     pub fn rect(&self,gc:Gcontext,drawable:Drawable,x:i16,y:i16,width:u16,height:u16) {
         let r = x::Rectangle {
             x,
@@ -536,8 +525,23 @@ impl Xcb {
             rectangles: &[r],
         });
     }
+    pub fn fill(&self,gc:Gcontext,drawable:Drawable,b:&[u8],dst_x:i16,dst_y:i16,width:u16,height:u16){
+        self.dbg_request(&x::PutImage {
+            format: x::ImageFormat::ZPixmap,
+            drawable,
+            gc,
+            width,
+            height,
+            dst_x,
+            dst_y,
+            left_pad: 0,
+            depth: self.depth,
+            data: &b.as_ref()
+        });
+    }
+
     pub fn copy(&self,gc:Gcontext,src_drawable:Drawable,dst_drawable:Drawable,src_x:i16,src_y:i16,dst_x:i16,dst_y:i16,width:u16,height:u16) {
-        self.request(&x::CopyArea {
+        self.dbg_request(&x::CopyArea {
             src_drawable,
             dst_drawable,
             gc,

@@ -1,4 +1,4 @@
-#[derive(Clone, CustomType)]
+#[derive(Clone, CustomType,Debug)]
 pub struct Visual {
     x:i16,
     y:i16,
@@ -28,8 +28,8 @@ pub struct Visual {
 
 impl Visual {
     fn set_content(&mut self, drw: x::Drawable, ctx:&Xcb, style:&Style, mut value: &str) {
-        if self.buf != x::Pixmap::none() { ctx.drop_pixmap(self.buf)}
-        if self.mask != x::Pixmap::none() { ctx.drop_pixmap(self.mask)}
+        if self.buf != x::Pixmap::none() { ctx.drop_pixmap(self.buf) }
+        if self.mask != x::Pixmap::none() { ctx.drop_pixmap(self.mask) }
         if self.inv_mask != x::Pixmap::none() { ctx.drop_pixmap(self.inv_mask) }
 
         self.content = value.to_string();
@@ -59,6 +59,9 @@ impl Visual {
                 self.buf = ctx.img_from_alpha(drw,&self.content,8,self.width as i16, self.height as i16,self.bg,self.fg);
                 //self.mask = ctx.mask_from_file(drw,&self.content,8, false, self.width as i16, self.height as i16);
                 self.inv_mask = ctx.mask_from_file(drw,&self.content,8, true, self.width as i16, self.height as i16);
+            }
+            "media"=> {
+                self.buf = ctx.new_pixmap(drw,self.width,self.height);
             }
             _ => {}
         }
@@ -236,6 +239,13 @@ impl Visual {
         }
     }
 
+    pub fn hide(&self,ctx:&Xcb) {
+        ctx.hide(self.window);
+        for c in &self.children {
+            c.hide(ctx);
+        }
+    }
+
     pub fn anchor_fit_to(&mut self,drw:x::Drawable,ctx:&Xcb, style:&Style, l:&Visual,p:&Visual,ax:i16,ay:i16) {
         self.x = 0;
         self.y = 0;
@@ -249,7 +259,5 @@ impl Visual {
         self.pheight = p.height;
 
         self.set_content(drw,ctx,style,&self.content.clone());
-
-
     }
 }

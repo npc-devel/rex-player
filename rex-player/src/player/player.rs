@@ -3,7 +3,7 @@
 
 
 use std::path::PathBuf;
-use ffmpeg_next::rescale;
+use ffmpeg_next::{rescale, Rescale};
 use futures::TryFutureExt;
 use smol::stream::StreamExt;
 
@@ -11,6 +11,7 @@ use smol::stream::StreamExt;
 pub enum ControlCommand {
     Play,
     Pause,
+    SkipFwd
 }
 
 pub struct Player {
@@ -35,187 +36,182 @@ impl Player {
     }
 
     pub fn start(
+        im: &Visual,
+        drw: x::Drawable,
+        drb: x::Drawable,
         mut input_context: Input,
         settings: StreamSettings,
-        video_frame_callback: impl FnMut(&ffmpeg_next::util::frame::Video) + Send + 'static,
         sender: smol::channel::Sender<i32>
     ) -> Result<Self, anyhow::Error> {
         let (control_sender, control_receiver) = smol::channel::unbounded();
         let sen2 = sender.clone();
+        let con2 = control_receiver.clone();
+        let fs = settings.frame_skip as i64;
 
-        let demuxer_thread =
-          std::thread::Builder::new().name("demuxer thread".into()).spawn(move || {
-              smol::block_on(async move {
-                  //let mut input_context = ffmpeg_next::format::input(&path).unwrap();
-                  sender.send(Media::LOADED).await.unwrap_or(());
-                  let mut start_pts = 0;
-                  if settings.start_secs != 0.0 {
-                      let start_secs: i64 = settings.start_secs as i64;
-                      let d = rescale::Rescale::rescale(&start_secs,(1,1), rescale::TIME_BASE);
-                      let dur = input_context.duration();
 
-                      if settings.start_secs < 0.0 {
-                          if d.abs() < dur { start_pts = dur + d }
-                      } else {
-                          start_pts = d;
-                      }
-                      input_context.seek(start_pts, ..start_pts).unwrap();
-                  }
 
-                  let video_stream =
-                      input_context.streams().best(ffmpeg_next::media::Type::Video).unwrap();
-                  let video_stream_index = video_stream.index();
+        let m = im.clone();
+        let demuxer_thread = std::thread::Builder::new().name("demuxer thread".into()).spawn(move || {
+            smol::block_on(async move {
+                let ctx = &CTX;
 
-                  let video_playback_thread = VideoPlaybackThread::start(
-                      start_pts,
-                      settings.clone(),
-                      &video_stream,
-                      Box::new(video_frame_callback),
-                      sender
-                  ).unwrap();
+                sender.send(Media::LOADED).await.unwrap_or(());
+                let mut start_pts: i64 = 0;
+                let mut start_secs: i64 = 0;
+                let mut end_pts: i64 = input_context.duration();
+                if settings.start_secs != 0.0 {
+                    start_secs = settings.start_secs as i64;
+                    if start_secs < 0 {
+                        start_secs =  rescale::Rescale::rescale(&end_pts,rescale::TIME_BASE, (1, 1)) + start_secs;
+                    }
+                    start_pts = rescale::Rescale::rescale(&start_secs, (1, 1), rescale::TIME_BASE);
 
-                  let mut playing = true;
-                  if settings.use_audio && input_context.streams().best(ffmpeg_next::media::Type::Audio).is_some() {
-                      let audio_stream =
-                          input_context.streams().best(ffmpeg_next::media::Type::Audio).unwrap();
-                      let audio_stream_index = audio_stream.index();
-                      let audio_playback_thread =
-                          AudioPlaybackThread::start(&audio_stream).unwrap();
+                    input_context.seek(start_pts, ..start_pts).unwrap();
+                    end_pts -= start_pts;
+                }
 
-                      let packet_forwarder_impl = async {
-                          let mut pts: i64 = -1;
-                          for (stream, packet) in input_context.packets() {
-                              pts = packet.pts().unwrap_or(0);
-                              if stream.index() == audio_stream_index {
-                                  audio_playback_thread.receive_packet(packet).await;
-                              } else if stream.index() == video_stream_index {
-                                  video_playback_thread.receive_packet(packet).await;
-                              }
-                          }
-                          pts
-                      }.fuse().shared();
+                let mut video_stream = input_context.streams().best(ffmpeg_next::media::Type::Video).unwrap();
+                let video_stream_index = video_stream.index();
 
-                      let mut lpfr: i64 = 0;
-                      loop {
-                          let packet_forwarder: OptionFuture<_> =
-                              if playing { Some(packet_forwarder_impl.clone()) } else { None }.into();
+                let video_playback_thread = VideoPlaybackThread::start(&m, drw, drb, settings.clone(), &video_stream, sender.clone()).unwrap();
 
-                          smol::pin!(packet_forwarder);
+                let packet_forwarder_impl = async {
+                    if settings.use_audio {
+                        let mut d = 0;
+                        let mut so: i64 = start_secs;
 
-                          futures::select! {
-                              pfr = packet_forwarder => {
-                                      let tpfr:i64 = pfr.unwrap_or(i64::MIN);
-                                      if lpfr == tpfr {
-                                          sen2.send(Media::EOF).await.unwrap();
-                                          break;
-                                      }
-                                      lpfr = tpfr;
-                                  }, // playback finished
-                              received_command = control_receiver.recv().fuse() => {
-                                  match received_command {
-                                      Ok(command) => {
-                                          video_playback_thread.send_control_message(command).await;
-                                          //audio_playback_thread.send_control_message(command).await;
-                                          match command {
-                                              ControlCommand::Play => {
-                                                  // Continue in the loop, polling the packet forwarder future to forward
-                                                  // packets
-                                                  playing = true;
-                                              },
-                                              ControlCommand::Pause => {
-                                                  playing = false;
-                                              }
-                                          }
-                                      }
-                                      Err(_) => {
-                                          sen2.send(Media::EOF).await.unwrap();
-                                          return;
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  } else {
-                      let packet_forwarder_impl = async {
-                          let mut pts: i64 = -1;
-                          for (stream, packet) in input_context.packets() {
-                              pts = packet.pts().unwrap_or(0);
-                              if stream.index() == video_stream_index {
-                                  video_playback_thread.receive_packet(packet).await;
-                              }
-                          }
-                          pts
-                      }.fuse().shared();
+                        let audio_stream = input_context.streams().best(ffmpeg_next::media::Type::Audio).unwrap();
+                        let audio_stream_index = audio_stream.index();
+                        let audio_playback_thread_r = AudioPlaybackThread::start(&audio_stream);
 
-                      let mut lpfr: i64 = 0;
-                      loop {
-                          let packet_forwarder: OptionFuture<_> =
-                              if playing { Some(packet_forwarder_impl.clone()) } else { None }.into();
+                        if audio_playback_thread_r.is_ok() {
+                            let audio_playback_thread = audio_playback_thread_r.unwrap();
 
-                          smol::pin!(packet_forwarder);
-                          futures::select! {
-                              pfr = packet_forwarder => {
-                                      let tpfr:i64 = pfr.unwrap_or(i64::MIN);
-                                      //println!("{tpfr}");
-                                      if lpfr == tpfr {
-                                          sen2.send(Media::EOF).await.unwrap();
-                                          break;
-                                      }
-                                      lpfr = tpfr;
-                                  },
-                              received_command = control_receiver.recv().fuse() => {
-                                  match received_command {
-                                      Ok(command) => {
-                                          video_playback_thread.send_control_message(command).await;
-                                          //audio_playback_thread.send_control_message(command).await;
-                                          match command {
-                                              ControlCommand::Play => {
-                                                  // Continue in the loop, polling the packet forwarder future to forward
-                                                  // packets
-                                                  playing = true;
-                                              },
-                                              ControlCommand::Pause => {
-                                                  playing = false;
-                                              }
-                                          }
-                                      }
-                                      Err(_) => {
-                                          sen2.send(Media::EOF).await.unwrap();
-                                          return;
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  }
-                  sen2.send(Media::EOF).await.unwrap();
-              });
-              //sen2.send_blocking(Media::EOF).unwrap();
-          })?;
+                            loop {
+                                if d > 0 {
+                                    let t = rescale::Rescale::rescale(&d, rescale::TIME_BASE, (1, 1));
+                                    println!("SEEK {d} {t}");
+                                    input_context.seek(d, ..d).unwrap();
+                                    video_playback_thread.send_control_message(ControlCommand::SkipFwd).await;
+                                    d = 0;
+                                }
+                                for (stream, packet) in input_context.packets() {
+                                    if !control_receiver.is_empty() {
+                                        println!("RECV");
+                                        let command = control_receiver.recv().fuse().await;
+                                        match command {
+                                            Ok(ControlCommand::SkipFwd) => {
+                                                so += 60;
+                                                d = packet.pts().unwrap() + rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
+                                                println!("TRY SEEK {d}");
+                                                break;
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    if stream.index() == audio_stream_index {
+                                        audio_playback_thread.receive_packet(packet).await;
+                                    } else if stream.index() == video_stream_index {
+                                        video_playback_thread.receive_packet(packet).await;
+                                    }
+                                }
+                                if d == 0 { break }
+                            }
+                        }
+                    }
+
+                    let mut d = 0;
+                    let mut so: i64 = start_secs;
+                    loop {
+                        if d > 0 {
+                            let t = rescale::Rescale::rescale(&d,rescale::TIME_BASE, (1, 1));
+                            println!("SEEK {d} {t}");
+                            input_context.seek(d , ..d).unwrap();
+                            video_playback_thread.send_control_message(ControlCommand::SkipFwd).await;
+                            d = 0;
+                        }
+                        for (stream, packet) in input_context.packets() {
+                            if !control_receiver.is_empty() {
+                                println!("RECV");
+                                let command = control_receiver.recv().fuse().await;
+                                match command {
+                                    Ok(ControlCommand::SkipFwd) => {
+                                        so += 60;
+                                        d = packet.pts().unwrap() + rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
+                                        println!("TRY SEEK {d}");
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            if stream.index() == video_stream_index {
+                                let pts = packet.pts().unwrap();
+                                video_playback_thread.receive_packet(packet).await;
+                            }
+                        }
+                        if d == 0 { break }
+                    }
+                }.fuse().shared();
+
+                let mut playing = true;
+                let mut eof = false;
+                loop {
+                    let packet_forwarder: OptionFuture<_> = if playing { Some(packet_forwarder_impl.clone()) } else { None }.into();
+                    smol::pin!(packet_forwarder);
+                    futures::select! {
+                        pfr = packet_forwarder => {
+                            video_playback_thread.flush_to_end().await;
+                            eof = true;
+                            sen2.send(Media::EOF).await.unwrap_or(());
+                        }
+                        /*received_command = control_receiver.recv().fuse() => {
+                            match received_command {
+                                Ok(command) => {
+                                    video_playback_thread.send_control_message(command).await;
+                                    //audio_playback_thread.send_control_message(command).await;
+                                    match command {
+                                        ControlCommand::Play => {
+                                            // Continue in the loop, polling the packet forwarder future to forward
+                                            // packets
+                                            playing = true;
+                                        },
+                                        ControlCommand::Pause => {
+                                            playing = false;
+                                        },
+                                        ControlCommand::SkipFwd => {
+                                        //    let p = 0;
+                                            //sen2.send(Media::POS_START + p).await.unwrap();
+                                          //  return;
+                                        },
+                                        _ => {}
+                                    }
+                                }
+                                Err(_) => {
+                                 //   sen2.send(Media::EOF).await.unwrap();
+                                    return;
+                                }
+                            }
+                        }*/
+                    }
+                //    if eof { break }
+                }
+
+            });
+        })?;
 
         Ok(Self {
             control_sender,
             demuxer_thread: Some(demuxer_thread)
         })
     }
-
-    /*pub fn toggle_pause_playing(&mut self) {
-        if self.playing {
-            self.playing = false;
-            self.control_sender.send_blocking(ControlCommand::Pause).unwrap();
-        } else {
-            self.playing = true;
-            self.control_sender.send_blocking(ControlCommand::Play).unwrap();
-        }
-        (self.playing_changed_callback)(self.playing);
-    }*/
 }
 
 impl Drop for Player {
     fn drop(&mut self) {
         self.control_sender.close();
-        if let Some(decoder_thread) = self.demuxer_thread.take() {
-            decoder_thread.join().unwrap();
-        }
+        //if let Some(decoder_thread) = self.demuxer_thread.take() {
+          //  decoder_thread.thread();
+        //}
     }
 }

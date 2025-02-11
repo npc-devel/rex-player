@@ -33,6 +33,18 @@ impl Layer {
             c.build_in(ctx,win,&mut self.root_visual);
         }
     }
+
+    pub fn visibility(&mut self, is_visible:bool,ctx:&Xcb) {
+            if is_visible {
+                for c in &self.root_visual.children {
+                    c.show(ctx);
+                }
+            } else {
+                for c in &self.root_visual.children {
+                    c.hide(ctx);
+                }
+            }
+    }
    pub fn new(file:&str,ctx:&Xcb,win:x::Window,bg:u32,fg:u32,w:u16,h:u16)->Self {
         let raw = view!(file,"rhai");
         let processed = Self::process(&raw);
@@ -42,7 +54,9 @@ impl Layer {
         let root = SceneNode::new(&mut dom);
         let mut root_visual = Visual::new(win, bg, fg, &root);
 
+    //   println!("{:?}",root_visual);
         for c in &root.children {
+      //     println!("{:?}",c);
            c.build_in(ctx,win,&mut root_visual);
         }
 

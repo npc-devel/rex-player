@@ -5,6 +5,7 @@
 //video frame timing
 //multithread
 
+skip to keyframe
 click events
 -- mode switch
 -- overflow free seek

@@ -63,6 +63,6 @@ include!("player/video.rs");
 include!("player/player.rs");
 
 fn main() {
-    let mut e = Rhai::new(1280,720);
+    let mut e = Rhai::new();
     e.run();
 }
