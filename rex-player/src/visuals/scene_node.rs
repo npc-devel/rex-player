@@ -10,6 +10,11 @@ struct SceneNode {
 }
 
 impl SceneNode {
+    pub fn rebuild(&self, ctx:&Xcb, win:x::Window,rv: &mut Visual) {
+        for c in &self.children {
+            c.build_in(ctx,win,rv);
+        }
+    }
     pub fn build_in(&self, ctx:&Xcb, win:x::Window, p: &mut Visual) {
         let mut bg = 0xFF101010;
         if self.tag == "i" { bg = 0xFF0020B0; }

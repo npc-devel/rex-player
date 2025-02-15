@@ -5,14 +5,20 @@
 //video frame timing
 //multithread
 
-skip to keyframe
+skip to keyframe //
 click events
--- mode switch
--- overflow free seek
+-- mode switch //
+-- overflow free seek //
+-- skip to -60 //
+animations
+-- osd
+-- click
+-- hover
 proper shutdown
 style sheet
-muted XXX & bkg audio
+muted XXX & bkg audio //
 playlist
+unwatched
 
 -- maybe
 voice control

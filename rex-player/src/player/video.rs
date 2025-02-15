@@ -4,15 +4,15 @@
 use ffmpeg_next::option::Type::{Duration as FDuration};
 
 pub struct VideoPlaybackThread {
-    control_sender: smol::channel::Sender<ControlCommand>,
+    control_sender: smol::channel::Sender<i64>,
     packet_sender: smol::channel::Sender<ffmpeg_next::codec::packet::packet::Packet>,
     receiver_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl VideoPlaybackThread {
-    pub async fn flush_to_end(&self) {
+    pub fn flush_to_end(&self) {
         while !self.packet_sender.is_empty() {
-            smol::Timer::after(std::time::Duration::from_millis(16)).await;
+            thread::sleep(Duration::from_nanos(1));
         }
     }
     pub fn start(
@@ -24,8 +24,8 @@ impl VideoPlaybackThread {
         stream: &ffmpeg_next::format::stream::Stream,
         sender: smol::channel::Sender<i32>
     ) -> Result<Self, anyhow::Error> {
-        let (control_sender, control_receiver) = smol::channel::bounded(12);
-        let (packet_sender, packet_receiver) = smol::channel::bounded::<ffmpeg_next::codec::packet::packet::Packet>(12);
+        let (control_sender, control_receiver) = smol::channel::unbounded::<i64>();
+        let (packet_sender, packet_receiver) = smol::channel::bounded::<ffmpeg_next::codec::packet::packet::Packet>(10);
         let decoder_context = ffmpeg_next::codec::Context::from_parameters(stream.parameters())?;
         let mut packet_decoder = decoder_context.decoder().video()?;
 
@@ -42,22 +42,37 @@ impl VideoPlaybackThread {
                     let mut to_map: Option<x::Pixmap> = None;
                     let fs: i64 = settings.frame_skip as i64;
                     let packet_receiver_impl = async {
-                        let mut d: i64 = 0;
+                   //     let mut d: i64 = 0;
+                        let mut find_key = false;
                         loop {
                             smol::future::yield_now().await;
                             if !control_receiver.is_empty() {
                               //  println!("RECV");
                                 match control_receiver.recv().await {
-                                    Ok(ControlCommand::SkipFwd) => {
-                                        while !packet_receiver.is_empty() { packet_receiver.recv().await.unwrap(); }
+                                    Ok(Player::CTL_DIE)=> {
+                                        return;
+                                    }
+                                    Ok(Player::CTL_SEEK_ABS)|Ok(Player::CTL_SEEK_REL) => {
+                                        println!("VIDEO FLUSHING");
+                                        //let wdelay = Duration::from_millis(10);
+                                        while !packet_receiver.is_empty() { packet_receiver.recv().await.unwrap();smol::Timer::after(Duration::from_nanos(1)).await;  }
                                         clock.start_time = Option::None;
-                                        println!("VIDEO SKIPPED");
+                                        find_key = true;
+                                        println!("VIDEO FLUSHED");
                                     }
                                     _ => {}
                                 }
                             }
 
                             let Ok(packet) = packet_receiver.recv().await else { break };
+                            if find_key {
+                                if !packet.is_key() {
+                                    //println!("NOT KEY");
+                                    smol::Timer::after(Duration::from_nanos(100)).await;
+                                    continue
+                                }
+                                find_key = false;
+                            }
                             packet_decoder.send_packet(&packet).unwrap_or(());
                             let mut decoded_frame = ffmpeg_next::util::frame::Video::empty();
                             while packet_decoder.receive_frame(&mut decoded_frame).is_ok() {
@@ -65,18 +80,23 @@ impl VideoPlaybackThread {
                                 if let Some(delay) =
                                     clock.convert_pts_to_instant(pts)
                                 {
-                                   // println!("{:?}", delay);
+                                //    println!("{:?}",delay);
                                     if delay.as_millis().abs_diff(0) > 250 {
                                         let secs_since_start = Duration::from_secs_f64(pts.unwrap() as f64 * clock.time_base_seconds * clock.speed_factor);
-                                        println!("SECS {:?}",secs_since_start);
+                                  //      println!("SECS {:?}",secs_since_start);
                                         clock.start_time = Option::from(std::time::Instant::now() - secs_since_start);
-                                        continue;
-                                        /*
-                                        smol::Timer::after(Duration::from_millis(1)).await;*/
+                                        smol::Timer::after(Duration::from_millis(5)).await;
                                     } else {
-                                        //println!("{:?}",delay);
                                         smol::Timer::after(delay).await;
                                     }
+
+
+                                    //} else {
+                                        // println!("{:?}", delay);
+
+                                        //println!("{:?}",delay);
+
+                                 //   }
                                     //println!("{:?}",delay);
 
                                    /* if d > 0 {
@@ -97,6 +117,7 @@ impl VideoPlaybackThread {
                                 let rescaler = to_rgba_rescaler.as_mut().unwrap();
                                 let mut rgb_frame = ffmpeg_next::util::frame::Video::empty();
                                 rescaler.run(&decoded_frame, &mut rgb_frame).unwrap();
+
                                 let data = rgb_frame.data(0);
                                 let bytes = data.len();
                                 let bf = (bytes / (rgb_frame.width() * 4) as usize) as u16;
@@ -110,8 +131,8 @@ impl VideoPlaybackThread {
                                         height: bf
                                     };
                                     ctx.request(&rq);*/
-                                    to_map = Some(ctx.new_pixmap(drw,m.width,bf));
-                                    println!("to map {:?}",to_map);
+                                    to_map = Some(ctx.new_pixmap(drw, m.width, bf));
+                                    println!("to map {:?}", to_map);
                                 }
                                 let map = to_map.unwrap();
                                 let mdrw = Drawable::Pixmap(map);
@@ -123,13 +144,15 @@ impl VideoPlaybackThread {
                                 ctx.copy(mgc, mdrw, drw, 0, 0, m.x, m.y + yofs, m.width, bf);
                                 ctx.copy(mgc, mdrw, drb, 0, 0, m.x, m.y + yofs, m.width, bf);
                                 ctx.copy(mgc, mdrw, mbuf, 0, 0, 0, yofs, m.width, bf);
-                             //   println!("Blitted");
-                            }
-                        }
-                        //  println!("{fc} frames received");
 
-                      // sender.send(Media::EOF).await.unwrap();
-                    }
+                            }
+                                 //   println!("Blitted");
+                                }
+
+                            //  println!("{fc} frames received");
+
+                          // sender.send(Media::EOF).await.unwrap();
+                        }
                         .fuse()
                         .shared();
 
@@ -140,7 +163,9 @@ impl VideoPlaybackThread {
 
                             smol::pin!(packet_receiver_m);
                             futures::select! {
-                                _ = packet_receiver_m => {},
+                                _ = packet_receiver_m => {
+                                   return;
+                                },
 
                              /*   received_command = control_receiver.recv().fuse() => {
                                     match received_command {
@@ -164,8 +189,9 @@ impl VideoPlaybackThread {
                                 }*/
                             }
                         }
+
                 });
-                //sen2.send_blocking(Media::EOF).unwrap();
+                sen2.send_blocking(Media::EOF).unwrap();
             })?;
 
         Ok(Self { control_sender, packet_sender, receiver_thread: Some(receiver_thread) })
@@ -178,16 +204,17 @@ impl VideoPlaybackThread {
         }
     }
 
-    pub async fn send_control_message(&self, message: ControlCommand) {
-        self.control_sender.send(message).await.unwrap();
+    pub async fn send_control_message(&self, message: i64) {
+        self.control_sender.send(message).await.unwrap_or_default();
     }
 }
 
 impl Drop for VideoPlaybackThread {
     fn drop(&mut self) {
+        self.flush_to_end();
         self.control_sender.close();
         if let Some(receiver_join_handle) = self.receiver_thread.take() {
-            receiver_join_handle.join().unwrap();
+            receiver_join_handle.join().unwrap_or(());
         }
     }
 }

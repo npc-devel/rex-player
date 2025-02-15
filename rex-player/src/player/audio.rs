@@ -11,16 +11,16 @@ use ringbuf::HeapRb;
 use std::future::Future;
 
 pub struct AudioPlaybackThread {
-    control_sender: smol::channel::Sender<ControlCommand>,
+    control_sender: smol::channel::Sender<i64>,
     packet_sender: smol::channel::Sender<ffmpeg_next::codec::packet::packet::Packet>,
     receiver_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl AudioPlaybackThread {
     pub fn start(stream: &ffmpeg_next::format::stream::Stream) -> Result<Self, anyhow::Error> {
-        let (control_sender, control_receiver) = smol::channel::bounded(12);
+        let (control_sender, control_receiver) = smol::channel::unbounded();
 
-        let (packet_sender, packet_receiver) = smol::channel::bounded(12);
+        let (packet_sender, packet_receiver) = smol::channel::bounded(33);
 
         let decoder_context = ffmpeg_next::codec::Context::from_parameters(stream.parameters())?;
         let packet_decoder = decoder_context.decoder().audio()?;
@@ -80,8 +80,8 @@ impl AudioPlaybackThread {
                             _ = packet_receiver => {},
                             /*received_command = control_receiver.recv().fuse() => {
                                 match received_command {
-                                    Ok(ControlCommand::Pause) => {
-                                        playing = false;
+                                    Ok(ControlCommand::Die) => {
+                                        return;
                                     }
                                     Ok(ControlCommand::Play) => {
                                         playing = true;
@@ -104,7 +104,7 @@ impl AudioPlaybackThread {
         }
     }
 
-    pub async fn send_control_message(&self, message: ControlCommand) {
+    pub async fn send_control_message(&self, message: i64) {
         self.control_sender.send(message).await.unwrap();
     }
 }
@@ -113,7 +113,7 @@ impl Drop for AudioPlaybackThread {
     fn drop(&mut self) {
         self.control_sender.close();
         if let Some(receiver_join_handle) = self.receiver_thread.take() {
-            receiver_join_handle.join().unwrap();
+            receiver_join_handle.join().unwrap_or(());
         }
     }
 }
@@ -154,7 +154,7 @@ where
 struct FFmpegToCPalForwarder {
     _cpal_stream: cpal::Stream,
     ffmpeg_to_cpal_pipe: Box<dyn FFMpegToCPalSampleForwarder>,
-    control_receiver: smol::channel::Receiver<ControlCommand>,
+    control_receiver: smol::channel::Receiver<i64>,
     packet_receiver: smol::channel::Receiver<ffmpeg_next::codec::packet::packet::Packet>,
     packet_decoder: ffmpeg_next::decoder::Audio,
     resampler: ffmpeg_next::software::resampling::Context,
@@ -166,13 +166,13 @@ impl FFmpegToCPalForwarder {
     fn new<T: Send + Pod + SizedSample + 'static>(
         config: cpal::SupportedStreamConfig,
         device: &cpal::Device,
-        control_receiver: smol::channel::Receiver<ControlCommand>,
+        control_receiver: smol::channel::Receiver<i64>,
         packet_receiver: smol::channel::Receiver<ffmpeg_next::codec::packet::packet::Packet>,
         packet_decoder: ffmpeg_next::decoder::Audio,
         output_format: ffmpeg_next::util::format::sample::Sample,
         output_channel_layout: ffmpeg_next::util::channel_layout::ChannelLayout,
     ) -> Self {
-        let buffer = HeapRb::new(1024*24);
+        let buffer = HeapRb::new(1024*8);
         let (sample_producer, mut sample_consumer) = buffer.split();
 
         let cpal_stream = device
@@ -216,8 +216,12 @@ impl FFmpegToCPalForwarder {
             if !self.control_receiver.is_empty() {
                 //  println!("RECV");
                 match self.control_receiver.recv_blocking() {
-                    Ok(ControlCommand::SkipFwd) => {
-                        while !self.packet_receiver.is_empty() { self.packet_receiver.recv().await.unwrap(); }
+                    Ok(Player::CTL_DIE)=> {
+                        println!("KILLING AUDIO");
+                        return;
+                    }
+                    Ok(Player::CTL_SEEK_ABS)|Ok(Player::CTL_SEEK_REL) => {
+                        while !self.packet_receiver.is_empty() { self.packet_receiver.recv_blocking().unwrap(); }
                         println!("AUDIO SKIPPED");
                     }
                     _ => {}
@@ -236,7 +240,7 @@ impl FFmpegToCPalForwarder {
                 // Create an empty frame to hold the resampled audio data.
                 let mut resampled_frame = ffmpeg_next::util::frame::Audio::empty();
                 self.resampler.run(&decoded_frame, &mut resampled_frame).unwrap();
-                self.ffmpeg_to_cpal_pipe.forward(resampled_frame).await;
+                if !resampled_frame.is_corrupt() { self.ffmpeg_to_cpal_pipe.forward(resampled_frame).await; }
             }
         }
     }

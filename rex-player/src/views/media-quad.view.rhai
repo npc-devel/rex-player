@@ -1,2 +1,3 @@
-<media w=50pw h=50ph>??=next("Videos/XXX","shuffle")??</><media w=50pw h=50ph l=50pw>??=next("Videos/XXX","shuffle")??</>
-<media t=50ph w=50pw h=50ph>??=next("Videos/XXX","shuffle")??</><media t=50ph l=50pw w=50pw h=50ph>??=next("Videos/XXX","shuffle")??</>
+<media use-audio=false id=q1 w=50pw h=50ph>??=next(eve,curlib,"shuffle")??</><media use-audio=false id=q2 w=50pw h=50ph l=50pw>??=next(eve,curlib,"shuffle")??</>
+<media use-audio=false id=q3 t=50ph w=50pw h=50ph>??=next(eve,curlib,"shuffle")??</><media use-audio=false speed-factor=0.5 start-secs=-60 id=q4 t=50ph l=50pw w=50pw h=50ph>??=next(eve,curlib,"shuffle")??</>
+<media use-audio=true id=q1 w=1px h=1px>??=next(eve,"Music","shuffle")??</>

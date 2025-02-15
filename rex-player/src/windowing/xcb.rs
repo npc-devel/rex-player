@@ -241,6 +241,10 @@ impl Xcb {
         pix
     }
 
+    fn drop_window(&self, window: x::Window) {
+        self.request(&x::UnmapWindow { window });
+    }
+
     fn drop_pixmap(&self, pixmap: x::Pixmap) {
         self.request(&x::FreePixmap { pixmap });
 

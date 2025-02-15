@@ -1,1 +1,1 @@
-<media bg=FF00FF00 id=media-full w=100pw h=100ph>??=next("Videos/Film","shuffle")??</>
+<media bg=FF00FF00 id=qfull w=100pw h=100ph>??=next(eve,curlib,"shuffle")??</>

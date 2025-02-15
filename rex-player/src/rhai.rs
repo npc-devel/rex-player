@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::str::FromStr;
 use lazy_static::lazy_static;
 
 use rhai::serde::DynamicSerializer;
@@ -57,6 +58,7 @@ fn rgba_rescaler_for_frame(frame: &ffmpeg_next::util::frame::Video,ow:u32,oh:u32
 }
 
 struct Media {
+    cur_file: String,
     player: Player,
     events: smol::channel::Receiver<i32>
 }
@@ -80,14 +82,14 @@ impl Media {
     const EOF:i32 = -1;
     const ERR:i32 = -2;
     const LOADED:i32 = 1;
-    const POS_START:i32 = 1000;
-    pub fn new(idx:i32, m: Visual, drw: x::Drawable, drb: x::Drawable) -> Self {
+
+    pub fn new(idx:u32,scope:&mut RScope,m: Visual, drw: x::Drawable, drb: x::Drawable) -> Self {
         let ctx = &CTX;
         let settings = StreamSettings {
-            use_audio: false,
+            use_audio: true,
             frame_skip: 0,
-            speed_factor: 0.1,
-            start_secs: -120.0,
+            speed_factor: 1.0,
+            start_secs: 0.0,
             stop_secs: 0.0,
             start_p: 0.0,
             stop_p: 0.0,
@@ -99,25 +101,44 @@ impl Media {
         loop {
             println!("Start media {idx}");
             let (sender, events) = smol::channel::unbounded();
-            let mcc = m.content.clone();
+            let mc = m.clone();
             let mut input = Option::None;
             let mut flags: i32 = 0;
             let mut evr = HashMap::new();
+            let mut cur_file = "".to_string();
+
+            let mut sett = settings.clone();
+            for a in mc.attrs {
+                match a.0.as_str() {
+                    "use-audio"=> { sett.use_audio = bool::from_str(a.1.as_str()).unwrap_or(true); }
+                    "speed-factor"=> { sett.speed_factor = f64::from_str(a.1.as_str()).unwrap_or(1.0); }
+                    "start-secs"=> { sett.start_secs = f64::from_str(a.1.as_str()).unwrap_or(0.0) }
+                    _=> {}
+                }
+            }
+
             loop {
-                evr = DomApp::eval(&mcc);
-                let file = PathBuf::from(&evr["_"]);
+                let mut path = mc.content.clone();
+                if &mc.content[0..1]=="?" {
+                    evr = DomApp::eval(scope,&mc.content);
+                    path = evr["_"].clone();
+                }
+                let file = PathBuf::from(&path);
                 println!("Checking {:?}",file);
                 (flags,input) = Player::check(file.clone());
 
-                if (flags & Player::HAS_VIDEO) != 0 {
+                if !sett.use_audio && (flags & Player::HAS_VIDEO) != 0 || sett.use_audio && (flags & Player::HAS_AUDIO) != 0 {
                     println!("Accepting {:?}",file);
+                    cur_file = path;
                     break
                 }
             }
-            let ply = Player::start(&m,drw,drb,input.unwrap(), settings.clone(), sender);
+
+            let ply = Player::start(&m,drw,drb,input.unwrap(), sett, sender);
             if ply.is_ok() {
                 let player = ply.ok().unwrap();
                 return Media {
+                    cur_file,
                     player,
                     events
                 };
@@ -130,6 +151,7 @@ impl Media {
 
 impl DomApp {
     fn new() ->Self {
+
         Self {
             layers: vec![]
         }
@@ -144,40 +166,24 @@ impl DomApp {
         self.layers.insert(name.clone(),DomLayer::new(name,file));*/
     }
 
-    fn eval(script: &str) ->HashMap<String,String> {
+    fn eval(scope:&mut RScope, script: &str) ->HashMap<String,String> {
+
         let mut engine = Engine::new();
-        //let mut o: String = "".to_string();
-        //engine.on_print(|s|{
-          //  engine.
-            //let mut l = all.root_visual.get_mut("#title").unwrap();
-            //let mut v = all.root_visual.select(e).first();
-            //v[0].set_content(c)
-        //});
         let fs = FilesystemPackage::new();
-        //let ser = serde_json::Serializer::new(());
         fs.register_into_engine(&mut engine);
-        //engine.register_global_module(ser.as_shared_module());
         engine.register_global_module(RandomPackage::new().as_shared_module());
         engine.register_fn("replace_layer",Self::replace_layer);
-        //let mut l = all.get_mut(l).unwrap();
-        //let mut v = l.root_visual.select(e);
 
-       // engine.register_fn("content",|l: &str, e: &str, c: &str| {
-            //let mut l = all.get(l).unwrap();
-         //   let mut v = all.root_visual.select(e).first();
-            //v[0].set_content(c);
-        //});
+
         let mut eval = script.trim();
         if eval.starts_with("??=") {
             let l = eval.len();
             eval = &script[3..l-2];
-            //            println!("*********************************** \n{}\n *****************************", script);
-            //
-        }
-        let eval = r#"let eve = result_init();let pr = "#.to_string() + eval + r#";eve = result(eve,"_",pr);return result_complete(eve);"#;
 
-        //println!("*********************************** \n{}\n *****************************", eval);
-        let rs = engine.eval::<String>(&(script!("common","rhai").as_str().to_string() + ";" + eval.as_str())).unwrap().trim().to_string();
+        }
+        let eval = r#"let eve = result_init();eve = "#.to_string() + eval + r#";return result_complete(eve);"#;
+
+        let rs = engine.eval_with_scope::<String>(scope,&(script!("common","rhai").as_str().to_string() + ";" + eval.as_str())).unwrap().trim().to_string();
         println!("\n{rs}\n");
         let mut res = rs.split('\n').collect::<Vec<&str>>();
         let mut ret = HashMap::new();
@@ -191,21 +197,22 @@ impl DomApp {
     }
 
     fn main_loop(&mut self, iwidth:i64, iheight:i64) {
+        let mut escope = RScope::new();
         let ctx = &CTX;
         let mut nwidth= iwidth as u16;
         let mut nheight = iheight as u16;
-        let mut width= 1;
-        let mut height = 1;
+        let mut width= 2;
+        let mut height = 2;
 
         let window = ctx.new_window(0xFFFF1010);
         ctx.size(window,nwidth,nheight);
 
         let drw = Drawable::Window(window);
         let style = Style::new(drw,&ctx, "common");
-        let mut ffms: HashMap<i32,Media> = nmap!();
+        let mut ffms: HashMap<u32,Media> = nmap!();
         let mut all: laymap!() = nmap!();
         for dl in &self.layers {
-            let mut nl = Layer::new(&dl.1.file, ctx, window,0,0,width,height);
+            let mut nl = Layer::new(&dl.1.file, ctx, window,0,0);
             nl.visibility(true,ctx);
             all.insert(dl.1.name.clone(),nl);
             ctx.collect();
@@ -215,8 +222,61 @@ impl DomApp {
         let mut back_buffer = ctx.new_pixmap(drw, iwidth as u16, iheight as u16);
         let mut drb = Drawable::Pixmap(back_buffer);
 
-        let mut to_die: Vec<i32> = vec![];
+        let mut to_die: Vec<u32> = vec![];
+        escope.push("curlib", "Videos/TV");
+        //let mut swap_layers: strmap!() = nmap!();
+        let mut rebuild = false;
         loop {
+
+           /* for s in swap_layers.iter_mut() {
+                println!("Swap layers {:?}", s);
+                if s.0 == "players" {
+                    let l = all.get("players").unwrap();
+                    let mut medias = l.select("media");
+                    for m in medias.iter_mut() {
+                        let idx = m.window.resource_id();
+                        let f = ffms.remove(&idx).unwrap();
+                        drop(f);
+                    }
+                }
+
+                let mut ol = all.clone();
+                all.clear();
+                for l in ol {
+                    if l.0.as_str() == s.0.as_str() {
+                        l.1.visibility(false,ctx);
+                        //let o = ol.remove(&s.0.to_string()).unwrap();
+                        drop(l.1);
+                        let mut nl = Layer::new(&(s.1.to_string() + ".view"), ctx, window,0,0,width,height);
+                        //nl.visibility(true,ctx);
+                        all.insert(s.0.to_string(),nl);
+                        rebuild = true;
+                    } else {
+                        all.insert(l.0,l.1);
+                    }
+                }
+
+                /*if s.0 == "players" {
+                    let l = all.get("players").unwrap();
+                    let mut medias = l.select("media");
+                    for m in medias.iter_mut() {
+                        let idx = m.window.resource_id();
+                        let nf = Media::new(idx,&mut escope, m.clone(), drw, drb);
+                        ffms.insert(idx, nf);
+                    }
+                }*/
+            }
+            swap_layers.clear();*/
+            /*if rebuild {
+                for li in &self.layers {
+                    let l = all.get_mut(&li.0).unwrap();
+                    l.visibility(true,ctx);
+                    l.fit_all(drw,ctx,&style,width,height);
+
+                    ctx.collect();
+                }
+            }*/
+
             //println!("Loop");
             for f in ffms.iter() {
                 let fr = f.1.events.try_recv();
@@ -237,15 +297,14 @@ impl DomApp {
             if to_die.len()>0 {
                 let l = all.get("players").unwrap();
                 let mut medias = l.select("media");
-                let mut idx:i32 = 0;
                 for m in medias.iter_mut() {
-                    if to_die.contains(&idx) {
+                    let idx = m.window.resource_id();
+                    if to_die.contains(&idx) || rebuild {
                         let f = ffms.remove(&idx).unwrap();
                         drop(f);
-                        let nf = Media::new(idx, m.clone(), drw, drb);
+                        let nf = Media::new(idx,&mut escope, m.clone(), drw, drb);
                         ffms.insert(idx, nf);
                     }
-                    idx += 1;
                 }
                 to_die.clear();
             }
@@ -256,14 +315,122 @@ impl DomApp {
             //println!("{:?}",ev);
             match ev.code {
                 XcbEvent::B_DOWN => {
-                    let er = DomApp::eval(&format!(r#"on_event(eve,"?","b_down",0,0,{})"#,ev.button));
-                    ffms.get_mut(&0).unwrap().player.control_sender.send_blocking(ControlCommand::SkipFwd).unwrap();
+                    let rid = ev.window.resource_id();
+                    let mut res: Vec<(String,HashMap<String,String>)> = vec![];
+                    for li in all.iter_mut() {
+                        let l = li.1;
+                        let vco = l.visual_by_res(rid);
+                        if vco.is_some() {
+                            let vc = vco.unwrap();
+                            res.push((li.0.clone(),DomApp::eval(&mut escope, &format!(r#"on_event(eve,"{}","b_down",0,0,{})"#, vc.attrs.get("id").unwrap_or(&"?".to_string()), ev.button))));
+                        }
+                    }
+                    for ri in res {
+                        let er = ri.1;
+                        println!("EVAL RES {:?}", er);
+                        for kv in er {
+                            let mut aa = kv.0.split(".");
+                            let id = aa.nth(0).unwrap_or("?");
+                            let act = aa.nth(0).unwrap_or("");
+
+                            if act != "" {
+                                if act == "clone" && kv.1 != id {
+                                    let l = all.get_mut(&ri.0).unwrap();
+                                    let mut vcl = l.select_visual(&("#".to_string() + id)).unwrap().clone();
+                                    let vs = l.select_visual(&("#".to_string() + kv.1.as_str())).unwrap();
+                                    let fs = ffms.get(&vs.window.resource_id()).unwrap().cur_file.clone();
+                                    let f = ffms.remove(&rid).unwrap();
+                                    drop(f);
+                                    vcl.content = fs;
+                                    let nf = Media::new(rid, &mut escope, vcl, drw, drb);
+                                    ffms.insert(rid, nf);
+                                } else {
+                                    match id {
+                                        "global"=> {
+                                            escope.set_value(act,kv.1.clone());
+                                        }
+                                        "layer"=> {
+                                            let mut files :HashMap<String,String> = nmap!();
+                                            loop {
+                                                let k = all.keys().nth(0).unwrap().clone();
+                                                let l = all.remove(&k).unwrap();
+                                                files.insert(k,l.file.clone());
+
+                                                let mut medias = l.select("media");
+                                                for m in medias.iter_mut() {
+                                                    let idx = m.window.resource_id();
+                                                    let f = ffms.remove(&idx).unwrap();
+                                                    drop(f.player);
+                                                }
+                                                l.root_visual.demolish(ctx);
+                                                drop(l);
+
+                                                if all.len() == 0 { break }
+                                            }
+
+                                            for ln in &self.layers {
+                                                let mut file = files.get(ln.0.as_str()).unwrap().clone();
+                                                if ln.0 == act {
+                                                    file = kv.1.clone() + ".view";
+                                                }
+                                                let mut nl = Layer::new(file.as_str(), ctx, window,0,0);
+                                                nl.fit_all(drw,ctx,&style,width,height);
+                                                nl.visibility(true,ctx);
+                                                all.insert(ln.0.to_string(),nl);
+                                            }
+                                            ctx.collect();
+                                            rebuild = true;
+                                        }
+                                        _ => {
+                                            let l = all.get_mut(&ri.0).unwrap();
+                                            let vr = l.select_visual(&("#".to_string() + id)).unwrap();
+                                            let v = kv.1.as_str();
+                                            match act {
+                                                "seek-rel" => {
+                                                    let d: i64 = i64::from_str(v).unwrap();
+                                                    ffms.get_mut(&rid).unwrap().player.control_sender.send_blocking(Player::CTL_SEEK_REL + d).unwrap_or(());
+                                                }
+                                                "seek-abs" => {
+                                                    let d: i64 = i64::from_str(v).unwrap();
+                                                    ffms.get_mut(&rid).unwrap().player.control_sender.send_blocking(Player::CTL_SEEK_ABS + d).unwrap_or(());
+                                                }
+                                                _ => {}
+                                            }
+
+                                            match v {
+                                                "die" => {
+                                                    let f = ffms.remove(&rid).unwrap();
+                                                    drop(f);
+                                                    let nf = Media::new(rid, &mut escope, vr.clone(), drw, drb);
+                                                    ffms.insert(rid, nf);
+                                                }/*
+                                                "skip-fwd" => {
+                                                    ffms.get_mut(&rid).unwrap().player.control_sender.send_blocking(ControlCommand::SkipFwd as isize).unwrap_or(());
+                                                }
+                                                "skip-bkw" => {
+                                                    ffms.get_mut(&rid).unwrap().player.control_sender.send_blocking(ControlCommand::SkipBkw as isize).unwrap_or(());
+                                                }
+                                                "seek-fwd" => {
+                                                    ffms.get_mut(&rid).unwrap().player.control_sender.send_blocking(ControlCommand::SeekFwd as isize).unwrap_or(());
+                                                }
+                                                "seek-bkw" => {
+                                                    ffms.get_mut(&rid).unwrap().player.control_sender.send_blocking(ControlCommand::SeekBkw as isize).unwrap_or(());
+                                                }*/
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 XcbEvent::B_UP => {
-                    DomApp::eval(&format!(r#"on_event(eve,"?","b_up",0,0,{})"#,ev.button));
+                    //DomApp::eval(&format!(r#"on_event(eve,"?","b_up",0,0,{})"#,ev.button));
                 }
                 XcbEvent::NONE => {
-                    if nwidth!=width || nheight!=height {
+                    if nwidth!=width || nheight!=height || rebuild {
+                        rebuild = false;
                         width = nwidth;
                         height = nheight;
                         if back_buffer != x::Pixmap::none() {
@@ -278,12 +445,12 @@ impl DomApp {
 
                         let l = all.get("players").unwrap();
                         let mut medias = l.select("media");
-                        let mut idx: i32 = 0;
+
                         for m in medias.iter_mut() {
+                            let idx = m.window.resource_id();
                             println!("New media {idx}");
-                            ffms.insert(idx, Media::new(idx,m.clone(), drw, drb));
+                            ffms.insert(idx, Media::new(idx, &mut escope, m.clone(), drw, drb));
                             thread::sleep(std::time::Duration::from_millis(10));
-                            idx += 1;
                         }
                     }
 
@@ -321,7 +488,9 @@ impl DomApp {
 
                         println!("Resizing");
                         loop {
-                            let fo = ffms.remove(&0);
+                            let idx = ffms.keys().nth(0).unwrap_or(&0).clone();
+                            if idx == 0 { break }
+                            let fo = ffms.remove(&idx);
                             if fo.is_some() {
                                 let f = fo.unwrap();
                                 drop(f);

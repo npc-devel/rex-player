@@ -98,20 +98,61 @@ fn rnd_file(lib) {
     return all[ai].to_string();
 }
 
-fn next(lib,mode) {
+fn next(eve,lib,mode) {
     let file = rnd_file(lib);
-    return file;
+    eve = result(eve, "_", file);
+    return eve;
 }
 
 fn on_event(eve,id,name,x,y,button) {
-    result(eve, id + ".control", "skip-fwd");
-    return "ok";
+      if id[0]=='q' {
+        switch button {
+            2 => {
+                eve = result(eve, id + ".control", "die");
+            }
+            3 => {
+                eve = result(eve, id + ".clone", "q4");
+            }
+            1 => {
+                eve = result(eve, id + ".seek-abs", "-50");
+            }
+            4 => {
+                eve = result(eve, id + ".seek-rel", "20");
+            }
+            5 => {
+                eve = result(eve, id + ".seek-rel", "-20");
+            }
+            _ => {}
+        }
+    } else {
+        switch id {
+            "lib-music" => {
+                eve = result(eve, "global.curlib", "Music");
+                eve = result(eve, "layer.players", "media-full");
+            }
+            "lib-tv" => {
+                eve = result(eve, "global.curlib", "Videos/TV");
+                eve = result(eve, "layer.players", "media-full");
+            }
+            "lib-film" => {
+                eve = result(eve, "global.curlib", "Videos/Film");
+                eve = result(eve, "layer.players", "media-full");
+            }
+            "lib-xxx" => {
+                eve = result(eve, "global.curlib", "Videos/XXX");
+                eve = result(eve, "layer.players", "media-quad");
+            }
+            _ => {}
+        }
+    }
+
+    return eve;
 }
 
 fn startup() {
     let app = new_app();
 
-    app.load_layer("players","media-quad.view");
+    app.load_layer("players","media-full.view");
     app.load_layer("app","app-playlist.view");
     app.load_layer("overlay","osd.view");
 

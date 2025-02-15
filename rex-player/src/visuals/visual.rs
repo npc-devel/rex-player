@@ -246,6 +246,18 @@ impl Visual {
         }
     }
 
+    pub fn demolish(&self,ctx:&Xcb) {
+        for c in &self.children {
+            c.demolish(ctx);
+        }
+        if self.tag!="root" {
+            if self.window != x::Window::none() { ctx.drop_window(self.window); }
+            if self.buf != x::Pixmap::none() { ctx.drop_pixmap(self.buf); }
+            if self.mask != x::Pixmap::none() { ctx.drop_pixmap(self.mask); }
+            if self.inv_mask != x::Pixmap::none() { ctx.drop_pixmap(self.inv_mask); }
+        }
+    }
+
     pub fn anchor_fit_to(&mut self,drw:x::Drawable,ctx:&Xcb, style:&Style, l:&Visual,p:&Visual,ax:i16,ay:i16) {
         self.x = 0;
         self.y = 0;
