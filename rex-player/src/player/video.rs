@@ -112,6 +112,12 @@ impl VideoPlaybackThread {
 
                                 if to_rgba_rescaler.is_none() {
                                     to_rgba_rescaler = Some(rgba_rescaler_for_frame(&decoded_frame, m.width as u32, m.height as u32));
+                                } else {
+                                    let ow = to_rgba_rescaler.as_ref().unwrap().output().width.clone() as u16;
+                                    let oh = to_rgba_rescaler.as_ref().unwrap().output().height.clone() as u16;
+                                    if m.width != ow || m.height != oh {
+                                        to_rgba_rescaler = Some(rgba_rescaler_for_frame(&decoded_frame, m.width as u32, m.height as u32));
+                                    }
                                 }
 
                                 let rescaler = to_rgba_rescaler.as_mut().unwrap();
@@ -191,7 +197,7 @@ impl VideoPlaybackThread {
                         }
 
                 });
-                sen2.send_blocking(Media::EOF).unwrap();
+                sen2.send_blocking(Media::EOF).unwrap_or_default();
             })?;
 
         Ok(Self { control_sender, packet_sender, receiver_thread: Some(receiver_thread) })

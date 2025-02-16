@@ -5,6 +5,7 @@
 //video frame timing
 //multithread
 
+split up rhai.rs
 skip to keyframe //
 click events
 -- mode switch //
@@ -15,7 +16,7 @@ animations
 -- click
 -- hover
 proper shutdown
-style sheet
+style sheet //
 muted XXX & bkg audio //
 playlist
 unwatched

@@ -23,45 +23,142 @@ pub struct Visual {
     children: Vec<Visual>,
     attrs: strmap!(),
     tag: String,
-    content: String
+    content: String,
+    visible: bool,
+    checked: bool
 }
 
 impl Visual {
-    fn set_content(&mut self, drw: x::Drawable, ctx:&Xcb, style:&Style, mut value: &str) {
+    const DEF_LINE_H:u32 = 37;
+    const DEF_FONT_SZ:u32 = 21;
+    const DEF_FG:u32 = 0xFF880088;
+    const DEF_STROKE:u32 = 0xFFFF00FF;
+    const DEF_BG:u32 = 0xFF101010;
+    const DEF_CHOICE_BG:u32 = 0xFF440044;
+    const DEF_CHOICE_COLS:u32 = 7;
+    const DEF_SEL_FG:u32 = 0xFF440044;
+    const DEF_SEL_BG:u32 = 0xFFAAAAAA;
+    fn set_content(&mut self, drw: x::Drawable, ctx:&CTX, style:&mut Style, mut value: &str) {
         if self.buf != x::Pixmap::none() { ctx.drop_pixmap(self.buf) }
         if self.mask != x::Pixmap::none() { ctx.drop_pixmap(self.mask) }
         if self.inv_mask != x::Pixmap::none() { ctx.drop_pixmap(self.inv_mask) }
 
-        self.content = value.to_string();
+        if self.tag.as_str()!="choices" {
+            if value == ">>" {
+                let ea = self.attrs["cnt-enum"].split("|");
+                let mut le = "";
+                let m = self.content.clone();
+                for e in ea {
+                    if le == "" {
+                        self.content = e.to_string();
+                    } else if le == m {
+                        self.content = e.to_string();
+                        break;
+                    }
+                    le = e;
+                }
+            } else { self.content = value.to_string() }
+        }
 
         match self.tag.as_str() {
-            "lbl" => {
-                if self.content.len() > 50 {
-                    self.content = self.content[0..50].to_string();
+            "choices" => {
+                if self.attrs.contains_key("items") { self.attrs.remove("items"); }
+                println!("Choice items {:?}",value);
+                self.attrs.insert("items".to_string(),value.to_string());
+                let title = "Choose...:".to_string();
+                let rv = title + value;
+                let items = rv.split(":");
+                let line_h = i16::from_str_radix(&style.prop_get("choices", "line-height", &format!("{}", Self::DEF_LINE_H)), 10).unwrap();
+                let font_sz = i16::from_str_radix(&style.prop_get("choices", "font-size", &format!("{}", Self::DEF_FONT_SZ)), 10).unwrap();
+
+                let sbg = format!("{:x}", Self::DEF_STROKE);
+                let stroke = u32::from_str_radix(&style.prop_get("choices", "stroke", &sbg), 16).unwrap();
+
+                let bgs = format!("{:x}", Self::DEF_SEL_BG);
+                let fgs = format!("{:x}", Self::DEF_SEL_FG);
+                //println!("Selected colors: {fgs}/{bgs}");
+
+                let sbg = u32::from_str_radix(&style.prop_get(":selected", "bg", &bgs), 16).unwrap();
+                let sfg = u32::from_str_radix(&style.prop_get(":selected","fg",&fgs),16).unwrap();
+
+                let fnt = style.font_get(ctx,drw,"choices",self.fg,stroke,21).to_owned();
+                let fnt_sel = style.font_get(ctx,drw,":selected",sfg,stroke,21).to_owned();
+                self.buf = ctx.new_pixmap(drw,self.width,self.height);
+
+                let bf = Drawable::Pixmap(self.buf);
+                let gc = ctx.new_gc(bf,self.bg,self.fg);
+                let gc_sel = ctx.new_gc(bf,sbg,sfg);
+                ctx.rect(gc,bf,0,0,self.width,self.height);
+
+                let blank = "".to_string();
+                let sel = ":".to_string() + self.attrs.get("selected").unwrap_or(&blank).as_str() + ":";
+                println!("Selected pattern {:?}",sel);
+
+                let mut yc = 0;
+                let mut xc = 16;
+                let mut cw = self.width;
+
+                let mask = ctx.new_mask(drw, self.width as i16, self.height as i16);
+
+                for l in items {
+              //      println!("Rendering choice: {l}");
+                    let mut issel = false;
+                    if sel!="::" { issel = sel.contains(&(":".to_string() + l + ":")) }
+
+                    let (mut sw,sh) = fnt.measure_row(l, cw);
+                    let pady = (line_h-sh as i16)/2 - line_h/8;
+                    let mut padx = (cw as i16 - sw as i16)/2;
+                    if issel {
+                        ctx.rect(gc_sel,bf,xc,yc,cw,line_h as u16);
+                        fnt.mask(ctx, mask, l, xc + padx, yc+pady, false, cw, line_h as u16);
+                        let fgc = ctx.new_masked_gc(bf,mask,self.fg,self.bg);
+                        fnt_sel.row(fgc, bf, ctx, self.buf, l, xc + padx, yc + pady, cw, line_h as u16);
+                    } else {
+                        if cw == self.width { padx = 0 };
+                        fnt.mask(ctx, mask, l, xc + padx, yc+pady, false, cw, line_h as u16);
+                        let fgc = ctx.new_masked_gc(bf,mask,self.fg,self.bg);
+                        fnt.row(fgc, bf, ctx, self.buf, l, xc + padx, yc + pady, cw, line_h as u16);
+                    }
+
+                    xc += cw as i16;
+                    if (xc+cw as i16) > self.width as i16 {
+                        cw = self.width/Self::DEF_CHOICE_COLS as u16;;
+                        xc = 0;
+                        yc += line_h;
+                    }
                 }
+                ctx.drop_pixmap(mask);
+            }
+            "lbl" => {
+                if self.content.len() > 50 { self.content = self.content[0..50].to_string() }
+                let sbg = format!("{:x}", Self::DEF_STROKE);
+                let stroke = u32::from_str_radix(&style.prop_get(":stroke", "fg", &sbg), 16).unwrap();
+
                 let mut pad:i16 = -1;
                 let line_h = 64;
-                let fnt = style.fonts.get("_").unwrap();
-                let (mut sw,sh) = fnt.measure_row(&self.content,self.width, self.height);
+                let fnt = style.font_get(ctx,drw,"lbl", self.fg, stroke,31);
+                let (mut sw,sh) = fnt.measure_row(&self.content,self.width);
                 let yo = (line_h-sh as i16)/2;
                 if pad == -1 { pad = yo; }
                 sw += 2*pad as u16;
                 self.width = sw;
                 self.height = line_h as u16;
                 self.buf = ctx.new_pixmap(drw,self.width,self.height);
-                fnt.row(drw,ctx,self.buf,&self.content,pad,yo,self.width, self.height);
+                let bf = Drawable::Pixmap(self.buf);
+                let gc = ctx.new_gc(bf,self.bg,self.fg);
+                ctx.rect(gc,bf,0,0, self.width, self.height);
+                fnt.row(gc,drw,ctx,self.buf,&self.content,pad,yo,self.width,self.height);
                 self.mask = ctx.new_mask(drw,self.width as i16, self.height as i16);
                 fnt.mask(ctx,self.mask,&self.content,pad,yo,false,self.width, self.height);
                 self.inv_mask = ctx.new_mask(drw,self.width as i16, self.height as i16);
                 fnt.mask(ctx,self.inv_mask,&self.content,pad,yo,true,self.width, self.height);
             }
             "i"=> {
-                self.buf = ctx.img_from_alpha(drw,&self.content,8,self.width as i16, self.height as i16,self.bg,self.fg);
-                //self.mask = ctx.mask_from_file(drw,&self.content,8, false, self.width as i16, self.height as i16);
+                let sbg = format!("{:x}", Self::DEF_STROKE);
+                let stroke = u32::from_str_radix(&style.prop_get(":stroke", "fg", &sbg), 16).unwrap();
+                self.buf = ctx.img_from_alpha(drw,&self.content,8,self.width as i16, self.height as i16,stroke,self.fg);
+                self.mask = ctx.mask_from_file(drw,&self.content,8, false, self.width as i16, self.height as i16);
                 self.inv_mask = ctx.mask_from_file(drw,&self.content,8, true, self.width as i16, self.height as i16);
-            }
-            "media"=> {
-                self.buf = ctx.new_pixmap(drw,self.width,self.height);
             }
             _ => {}
         }
@@ -136,7 +233,11 @@ impl Visual {
         self.ay = self.iay + self.y;
 
         match self.tag.as_str() {
-            "media"|"i"|"lbl" => {}
+            "media"=>{
+                println!("New media-buf {}x{}",self.width,self.height);
+                self.buf = ctx.new_pixmap(drw,self.width,self.height);
+            }
+            "i"|"lbl"|"choices" => {}
             _ => {
                 let fs = self.clone();
                 let mut l = &fs;
@@ -203,7 +304,27 @@ impl Visual {
         None
     }
     
-    pub fn new(window:x::Window,bg:u32,fg:u32,n:&SceneNode)->Self {
+    pub fn new(ctx:&CTX,pwin:x::Window,n:&SceneNode)->Self {
+        let mut visible = true;
+        if n.attrs.contains_key("visible") { visible = bool::from_str(&n.attrs["visible"]).unwrap(); }
+
+        let mut bg = Self::DEF_BG;
+        if n.tag == "choices" { bg = Self::DEF_CHOICE_BG; }
+        if n.attrs.contains_key("bg") { bg = u32::from_str_radix(&n.attrs["bg"],16).unwrap(); }
+        let mut fg = Self::DEF_FG;
+        if n.attrs.contains_key("fg") { fg = u32::from_str_radix(&n.attrs["fg"],16).unwrap(); }
+
+        let mut window = pwin;
+        match n.tag.as_str() {
+            "root"=> {}
+            "media"=> {
+                window = ctx.new_basic_window(pwin, bg)
+            }
+            _ => {
+                window = ctx.new_sub_window(pwin, bg)
+            }
+        }
+
         Self {
             x: 0,
             y: 0,
@@ -228,12 +349,14 @@ impl Visual {
             attrs: n.attrs.clone(),
             children: vec![],
             tag: n.tag.clone(),
-            content: n.content.clone()
+            content: n.content.clone(),
+            visible,
+            checked: false
         }
     }
 
     pub fn show(&self,ctx:&Xcb) {
-        ctx.show(self.window);
+        if self.visible { ctx.show(self.window) }
         for c in &self.children {
             c.show(ctx);
         }
@@ -258,7 +381,7 @@ impl Visual {
         }
     }
 
-    pub fn anchor_fit_to(&mut self,drw:x::Drawable,ctx:&Xcb, style:&Style, l:&Visual,p:&Visual,ax:i16,ay:i16) {
+    pub fn anchor_fit_to(&mut self,drw:x::Drawable,ctx:&CTX, style:&mut Style, l:&Visual,p:&Visual,ax:i16,ay:i16) {
         self.x = 0;
         self.y = 0;
         self.iax = ax;

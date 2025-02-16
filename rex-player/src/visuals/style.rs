@@ -20,11 +20,39 @@ impl Style {
         }
         
         let mut fonts : spritemap!() = nmap!();
-        fonts.insert("_".to_string(),Sprite::new(drw,ctx,"fonts/default/31",0xFF0070F5,0xFF000000));
             
         Self {
             rules,
             fonts
+        }
+    }
+
+    fn font_get(&mut self,ctx:&CTX,drw:Drawable,sel: &str,fg: u32,bg: u32,h:u32)->Sprite {
+        if !self.fonts.contains_key(sel) {
+            let mut file = "fonts/default/".to_string() + h.to_string().as_str();
+            let ff = asset!(file,"fnt");
+            let mut from = h;
+            if !std::fs::exists(ff).unwrap() {
+                from = 31;
+                file = "fonts/default/31".to_string()
+            }
+            let sp = Sprite::new(drw, ctx, &file, fg, bg,from,h);
+            self.fonts.insert(sel.to_string(), sp);
+        }
+
+        self.fonts[sel].clone()
+    }
+
+    fn prop_get(&self,sel: &str,prop: &str,def: &str)->String {
+        if self.rules.contains_key(sel) {
+            let r = &self.rules[sel];
+            if r.contains_key(prop) {
+                r[prop].to_string()
+            } else {
+                def.to_string()
+            }
+        } else {
+            def.to_string()
         }
     }
 

@@ -123,7 +123,7 @@ impl Player {
 
                         let audio_stream = input_context.streams().best(ffmpeg_next::media::Type::Audio).unwrap();
                         let audio_stream_index = audio_stream.index();
-                        let audio_playback_thread_r = AudioPlaybackThread::start(&audio_stream);
+                        let audio_playback_thread_r = AudioPlaybackThread::start(&audio_stream,sender.clone());
 
                         let vso = input_context.streams().best(ffmpeg_next::media::Type::Video);
                         if audio_playback_thread_r.is_ok() && vso.is_some() {
@@ -135,28 +135,15 @@ impl Player {
                             let video_playback_thread = o_video_playback_thread.unwrap();
                             loop {
                                 if d != i64::MIN {
-                                   // let t = rescale::Rescale::rescale(&d, rescale::TIME_BASE, (1, 1));
-                              //      println!("SEEK {d} {t}");
-                                    start_pts += d;
-                                    input_context.seek(start_pts, ..start_pts).unwrap_or(());
-                                    video_playback_thread.send_control_message(chain_cmd).await;
-                                    audio_playback_thread.send_control_message(chain_cmd).await;
-                                 /*   for (stream, packet) in input_context.packets() {
-                                        if stream.index() == video_stream_index {
-                                            if packet.is_key() {
-                                                let p = packet.pts().unwrap();
-                                                println!("SEEK TO {p}");
-                                                start_pts = p + d - 3;
-                                                input_context.seek(start_pts, ..start_pts).unwrap();
-                                                break;
-                                            }
-                                        }
-                                    }*/
+                                    if end_pts > d {
+                                        start_pts = d;
+                                        input_context.seek(start_pts, ..start_pts).unwrap_or(());
+                                        video_playback_thread.send_control_message(chain_cmd).await;
+                                        audio_playback_thread.send_control_message(chain_cmd).await;
+                                    }
                                     d = i64::MIN;
-                               //     video_playback_thread.send_control_message(ControlCommand::SkipFwd).await;
                                 }
                                 for (stream, packet) in input_context.packets() {
-
                                     if stream.index() == audio_stream_index {
                                         audio_playback_thread.receive_packet(packet).await;
                                     } else if stream.index() == video_stream_index {
@@ -169,63 +156,26 @@ impl Player {
                                                     video_playback_thread.send_control_message(Self::CTL_DIE).await;
                                                     return;
                                                 }
-                                                /*Ok(Self::SEEK_ABS) => {
-                                                    start_pts = packet.pts().unwrap();
-                                                    so = Self::pts_delta(so,30,start_pts,end_pts);
-                                                    d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                                    chain_cmd = command.ok().unwrap();
-                                                    println!("TRY SEEK {d}");
-                                                    break;
-                                                }
-                                                Ok(ControlCommand::SkipBkw) => {
-                                                    start_pts = packet.pts().unwrap();
-                                                    so = Self::pts_delta(so,-30, start_pts,end_pts);
-                                                    d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                                    chain_cmd = command.ok().unwrap();
-                                                    println!("TRY SEEK {d}");
-                                                    break;
-                                                }
-                                                Ok(ControlCommand::SeekFwd) => {
-                                                    start_pts = packet.pts().unwrap();
-                                                    so = Self::pts_delta(so, 10,start_pts,end_pts);
-                                                    d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                                    chain_cmd = command.ok().unwrap();
-                                                    println!("TRY SEEK {d}");
-                                                    break;
-                                                }
-                                                Ok(ControlCommand::SeekBkw) => {
-                                                    start_pts = packet.pts().unwrap();
-                                                    so = Self::pts_delta(so, -10,start_pts,end_pts);
-                                                    d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                                    chain_cmd = command.ok().unwrap();
-                                                    println!("TRY SEEK {d}");
-                                                    break;
-                                                }*/
                                                 _ => {
                                                     if command.is_ok() {
-                                                        let cv = command.unwrap();
+                                                        let cv = command.unwrap() ;
                                                         if cv >= Self::CTL_SEEK_ABS_MIN && cv <= Self::CTL_SEEK_ABS_MAX {
-                                                            let sd = cv - Self::CTL_SEEK_ABS;
-                                                            if sd > 0 {
-                                                                start_pts = 0;
-                                                                so = Self::pts_delta(so, sd, start_pts, end_pts);
+                                                            if cv > Self::CTL_SEEK_ABS {
+                                                                so = Self::pts_delta(0, cv - Self::CTL_SEEK_ABS, 0, end_pts);
                                                                 d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
                                                             } else {
-                                                                start_pts = end_pts;
-                                                                so = Self::pts_delta(so, sd, start_pts, end_pts);
+                                                                so = Self::pts_delta(end_secs,cv - Self::CTL_SEEK_ABS, 0, end_pts);
                                                                 d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                                                chain_cmd = command.ok().unwrap();
-
                                                             }
                                                             chain_cmd = Self::CTL_SEEK_ABS;
 
-                                                            println!("TRY SEEK {d}");
+                                                            println!("TRY ABS SEEK {d}");
                                                             break;
                                                         } else if cv >= Self::CTL_SEEK_REL_MIN && cv <= Self::CTL_SEEK_REL_MAX {
                                                             let sd = cv - Self::CTL_SEEK_REL;
                                                             start_pts = packet.pts().unwrap();
                                                             so = Self::pts_delta(so, sd, start_pts, end_pts);
-                                                            d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
+                                                            d = start_pts + rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
                                                             chain_cmd = Self::CTL_SEEK_REL;
 
                                                             println!("TRY SEEK {d}");
@@ -247,22 +197,11 @@ impl Player {
 
                             loop {
                                 if d != i64::MIN {
-                                    start_pts += d;
-                                    input_context.seek(start_pts, ..start_pts).unwrap_or(());
-                                    //audio_playback_thread.send_control_message(chain_cmd).await;
-                                    /*   for (stream, packet) in input_context.packets() {
-                                           if stream.index() == video_stream_index {
-                                               if packet.is_key() {
-                                                   let p = packet.pts().unwrap();
-                                                   println!("SEEK TO {p}");
-                                                   start_pts = p + d - 3;
-                                                   input_context.seek(start_pts, ..start_pts).unwrap();
-                                                   break;
-                                               }
-                                           }
-                                       }*/
-                                //    d = i64::MIN;
-                                    //     video_playback_thread.send_control_message(ControlCommand::SkipFwd).await;
+                                    if end_pts > d {
+                                        start_pts = d;
+                                        input_context.seek(start_pts, ..start_pts).unwrap_or(());
+                                    }
+                                    d = i64::MIN;
                                 }
                                 for (stream, packet) in input_context.packets() {
                                     if stream.index() == audio_stream_index {
@@ -276,29 +215,24 @@ impl Player {
                                                 }
                                                 _ => {
                                                     if command.is_ok() {
-                                                        let cv = command.unwrap();
+                                                        let cv = command.unwrap() ;
                                                         if cv >= Self::CTL_SEEK_ABS_MIN && cv <= Self::CTL_SEEK_ABS_MAX {
-                                                            let sd = cv - Self::CTL_SEEK_ABS;
-                                                            if sd > 0 {
-                                                                start_pts = 0;
-                                                                so = Self::pts_delta(so, sd, start_pts, end_pts);
+                                                            if cv > Self::CTL_SEEK_ABS {
+                                                                so = Self::pts_delta(0, cv - Self::CTL_SEEK_ABS, 0, end_pts);
                                                                 d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
                                                             } else {
-                                                                start_pts = end_pts;
-                                                                so = Self::pts_delta(so, sd, start_pts, end_pts);
+                                                                so = Self::pts_delta(end_secs,cv - Self::CTL_SEEK_ABS, 0, end_pts);
                                                                 d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                                                chain_cmd = command.ok().unwrap();
-
                                                             }
                                                             chain_cmd = Self::CTL_SEEK_ABS;
 
-                                                            println!("TRY SEEK {d}");
+                                                            println!("TRY ABS SEEK {d}");
                                                             break;
                                                         } else if cv >= Self::CTL_SEEK_REL_MIN && cv <= Self::CTL_SEEK_REL_MAX {
                                                             let sd = cv - Self::CTL_SEEK_REL;
                                                             start_pts = packet.pts().unwrap();
                                                             so = Self::pts_delta(so, sd, start_pts, end_pts);
-                                                            d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
+                                                            d = start_pts + rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
                                                             chain_cmd = Self::CTL_SEEK_REL;
 
                                                             println!("TRY SEEK {d}");
@@ -326,71 +260,23 @@ impl Player {
                     let video_playback_thread = VideoPlaybackThread::start(&m, drw, drb, settings.clone(), &video_stream, sender.clone()).unwrap();
                     loop {
                         if d != i64::MIN {
-                            //let t = rescale::Rescale::rescale(&d,rescale::TIME_BASE, (1, 1));
-
                             if end_pts > d {
-                                println!("SEEK {d}");
                                 start_pts = d;
                                 input_context.seek(start_pts, ..start_pts).unwrap_or(());
-                                println!("FLUSHING");
                                 video_playback_thread.send_control_message(chain_cmd).await;
-                                println!("FLUSHED");
                             }
                             d = i64::MIN;
                         }
-
                         let pts_edge = rescale::Rescale::rescale( &30,(1,1), rescale::TIME_BASE);
                         for (stream, packet) in input_context.packets() {
                             if stream.index() == video_stream_index {
                                 let ppts = packet.pts().unwrap();
                                 if !control_receiver.is_empty() && ppts > 0 {
-                                    println!("RECV");
                                     let command = control_receiver.recv().fuse().await;
                                     match command {
                                         Ok(Self::CTL_DIE) => {
                                             video_playback_thread.send_control_message(Self::CTL_DIE).await;
-                                        }/*
-                                        Ok(ControlCommand::SkipFwd) => {
-                                            start_pts = ppts;
-                                            so = Self::pts_delta(so,30,start_pts,end_pts);
-                                            d = start_pts + rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                            if d != start_pts {
-                                                chain_cmd = command.ok().unwrap();
-                                                println!("TRY SEEK {d}");
-                                            }
-                                            break;
                                         }
-                                        Ok(ControlCommand::SkipBkw) => {
-                                            start_pts = ppts;
-                                            so = Self::pts_delta(so,-30,start_pts,end_pts);
-                                            d = start_pts + rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                            if d != start_pts {
-                                                chain_cmd = command.ok().unwrap();
-                                                println!("TRY SEEK {d}");
-                                            }
-                                            break;
-                                        }
-                                        Ok(ControlCommand::SeekFwd) => {
-                                            start_pts = ppts;
-                                            so = Self::pts_delta(so,20,start_pts,end_pts);
-                                            d = start_pts + rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                            if d != start_pts {
-                                                chain_cmd = command.ok().unwrap();
-                                                println!("TRY SEEK {d}");
-                                                break;
-                                            }
-
-                                        }
-                                        Ok(ControlCommand::SeekBkw) => {
-                                            start_pts = ppts;
-                                            so = Self::pts_delta(so,-20,start_pts,end_pts);
-                                            d = start_pts + rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
-                                            if d != start_pts {
-                                                chain_cmd = command.ok().unwrap();
-                                                println!("TRY SEEK {d}");
-                                                break;
-                                            }
-                                        }*/
                                         _ => {
                                             if command.is_ok() {
                                                 let cv = command.unwrap() ;
@@ -403,8 +289,6 @@ impl Player {
                                                         d = rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
                                                     }
                                                     chain_cmd = Self::CTL_SEEK_ABS;
-
-                                                    println!("TRY ABS SEEK {d}");
                                                     break;
                                                 } else if cv >= Self::CTL_SEEK_REL_MIN && cv <= Self::CTL_SEEK_REL_MAX {
                                                     let sd = cv - Self::CTL_SEEK_REL;
@@ -412,8 +296,6 @@ impl Player {
                                                     so = Self::pts_delta(so, sd, start_pts, end_pts);
                                                     d = start_pts + rescale::Rescale::rescale(&so, (1, 1), rescale::TIME_BASE);
                                                     chain_cmd = Self::CTL_SEEK_REL;
-
-                                                    println!("TRY SEEK {d}");
                                                     break;
                                                 }
                                             }
@@ -436,42 +318,11 @@ impl Player {
                     smol::pin!(packet_forwarder);
                     futures::select! {
                         pfr = packet_forwarder => {
-                            //if o_video_playback_thread.is_some() { o_video_playback_thread.unwrap().flush_to_end().await }
                             eof = true;
                             sender.send(Media::EOF).await.unwrap_or(());
                         }
-                        /*received_command = control_receiver.recv().fuse() => {
-                            match received_command {
-                                Ok(command) => {
-                                    video_playback_thread.send_control_message(command).await;
-                                    //audio_playback_thread.send_control_message(command).await;
-                                    match command {
-                                        ControlCommand::Play => {
-                                            // Continue in the loop, polling the packet forwarder future to forward
-                                            // packets
-                                            playing = true;
-                                        },
-                                        ControlCommand::Pause => {
-                                            playing = false;
-                                        },
-                                        ControlCommand::SkipFwd => {
-                                        //    let p = 0;
-                                            //sen2.send(Media::POS_START + p).await.unwrap();
-                                          //  return;
-                                        },
-                                        _ => {}
-                                    }
-                                }
-                                Err(_) => {
-                                 //   sen2.send(Media::EOF).await.unwrap();
-                                    return;
-                                }
-                            }
-                        }*/
                     }
-                //    if eof { break }
                 }
-
             });
         })?;
 

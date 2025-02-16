@@ -1,5 +1,5 @@
 use std::io::Read;
-
+#[derive(Clone)]
 struct Sprite {
     pix: x::Pixmap,
     mask: x::Pixmap,
@@ -10,11 +10,15 @@ struct Sprite {
 }
 
 impl Sprite {
-    pub fn new(drw:x::Drawable,ctx:&Xcb,file:&str,fg:u32,bg:u32)-> Self {
+    pub fn new(drw:x::Drawable,ctx:&Xcb,file:&str,fg:u32,bg:u32,from:u32,to:u32)-> Self {
         let ff = asset!(file,"fnt");
         let pf = asset!(file,"png");
-        let mf = asset!(file,"met");
-        let mut img = image::open(pf).unwrap().to_rgba8();
+       // let mf = asset!(file,"met");
+        let sf = to as f32/from as f32;
+        let mut imgs = image::open(pf).unwrap();
+        let nw = imgs.width() as f32 * sf;
+        let nh = imgs.height() as f32 * sf;
+        let mut img = imgs.resize(nw as u32,nh as u32,FilterType::Lanczos3).to_rgba8();
 
         let pfg:[f32;3] = [
             ((0x00FF0000 & fg) >> 16) as f32,
@@ -112,7 +116,7 @@ impl Sprite {
         for m in dom.entries() {
             let mut vals : intmap!() = nmap!();
             for vp in m.1.entries() {
-                vals.insert(vp.0.to_string(),i32::from_str_radix(vp.1.as_str().unwrap(),10).unwrap());
+                vals.insert(vp.0.to_string(), (sf * i32::from_str_radix(vp.1.as_str().unwrap(), 10).unwrap() as f32) as i32);
             } 
             map.insert(i32::from_str_radix(m.0,10).unwrap(),vals);
         }
@@ -126,25 +130,23 @@ impl Sprite {
             map
         }
     }
-    fn measure_row(&self,cnt:&str,w:u16,h:u16)->(u16,u16) {
+    fn measure_row(&self,cnt:&str,w:u16)->(u16,u16) {
         let mut x = 0;
-        let mut y = 0;
         let mut mh = 0;
         for c in cnt.chars() {
             let key = c as i32;
             if self.map.contains_key(&key) {
                 let info = self.map.get(&key).unwrap();
-                let mut h = *info.get("height").unwrap() as u16;
-                h += *info.get("yoffset").unwrap() as u16;
-                if h>mh { mh = h; }
+                let mut ch = *info.get("height").unwrap() as u16;
+                ch += *info.get("yoffset").unwrap() as u16;
+                if ch>mh { mh = ch; }
                 x += *info.get("xadvance").unwrap() as i16;
             }
         }
-        (x as u16,mh as u16)
+        (x as u16,mh)
     }
     
-    fn row(&self,drw:x::Drawable,ctx:&Xcb,buf:x::Pixmap,cnt:&str,mut x:i16,mut y:i16,w:u16,h:u16) {
-        let gc = ctx.new_gc(drw,0,0);
+    fn row(&self,gc: x::Gcontext,drw:x::Drawable,ctx:&Xcb,buf:x::Pixmap,cnt:&str,mut x:i16,mut y:i16,w:u16,h:u16) {
         for c in cnt.chars() {
             let key = c as i32;
             if self.map.contains_key(&key) {
@@ -185,7 +187,7 @@ impl Sprite {
             if self.map.contains_key(&key) {
                 let info = self.map.get(&key).unwrap();
                 let h = *info.get("height").unwrap() as u16;
-                ctx.dbg_request(&x::CopyArea {
+                ctx.request(&x::CopyArea {
                     src_drawable: srd,
                     dst_drawable: dst,
                     gc,

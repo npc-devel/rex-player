@@ -10,31 +10,24 @@ struct SceneNode {
 }
 
 impl SceneNode {
-    pub fn rebuild(&self, ctx:&Xcb, win:x::Window,rv: &mut Visual) {
+    pub fn rebuild(&self, ctx:&CTX, win:x::Window,rv: &mut Visual) {
         for c in &self.children {
             c.build_in(ctx,win,rv);
         }
     }
-    pub fn build_in(&self, ctx:&Xcb, win:x::Window, p: &mut Visual) {
-        let mut bg = 0xFF101010;
-        if self.tag == "i" { bg = 0xFF0020B0; }
-        if self.attrs.contains_key("bg") { bg = u32::from_str_radix(&self.attrs["bg"],16).unwrap(); }
-        let mut fg = 0xFF0070F5;
-        if self.attrs.contains_key("fg") { fg = u32::from_str_radix(&self.attrs["fg"],16).unwrap(); }
-
+    pub fn build_in(&self, ctx:&CTX, win:x::Window, p: &mut Visual) {
         let mut nwin = x::Window::none();
         if self.tag == "root" {
             for c in &self.children {
                 c.build_in(ctx, win, p);
             }
         } else {
-            nwin = ctx.new_sub_window(win,bg)
+            let mut vis = Visual::new(ctx,win,self);
+            for c in &self.children {
+                c.build_in(ctx, vis.window, &mut vis);
+            }
+            p.children.push(vis);
         }
-        let mut vis = Visual::new(nwin,bg,fg,self);
-        for c in &self.children {
-            c.build_in(ctx, vis.window, &mut vis);
-        }
-        p.children.push(vis);
     }
     pub fn none()->Self {
         Self {

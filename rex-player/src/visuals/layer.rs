@@ -21,7 +21,7 @@ impl Layer {
     pub fn select_visual(&mut self, sel:&str) ->Option<&mut Visual> {
         self.root_visual.get_mut(sel)
     }
-    pub fn fit_all(&mut self,drw:x::Drawable,ctx:&Xcb, style:&Style, w:u16, h:u16) {
+    pub fn fit_all(&mut self,drw:x::Drawable,ctx:&CTX, style:&mut Style, w:u16, h:u16) {
         self.root_visual.width = w;
         self.root_visual.height = h;
         let mut cs = self.root_visual.clone();
@@ -49,7 +49,7 @@ impl Layer {
                 }
             }
     }
-    pub fn replace(&mut self,file:&str,ctx:&Xcb,win:x::Window) {
+    pub fn replace(&mut self,file:&str,ctx:&CTX,win:x::Window) {
         println!("Replace {file}");
         let raw = view!(file,"rhai");
         let processed = Self::process(&raw);
@@ -65,7 +65,7 @@ impl Layer {
             c.build_in(ctx,win,&mut self.root_visual);
         }
     }
-   pub fn new(file:&str,ctx:&Xcb,win:x::Window,bg:u32,fg:u32)->Self {
+   pub fn new(file:&str,ctx:&CTX,win:x::Window,bg:u32,fg:u32)->Self {
         println!("Layer {file}");
         let raw = view!(file,"rhai");
         let processed = Self::process(&raw);
@@ -73,7 +73,7 @@ impl Layer {
 //        println!("***********************************************************\n\n{jdoc}\n\n*********************************************************************************");
         let mut dom = json::parse(&jdoc).unwrap();
         let root = SceneNode::new(&mut dom);
-        let mut root_visual = Visual::new(win, bg, fg, &root);
+        let mut root_visual = Visual::new(ctx,win,&root);
 
     //   println!("{:?}",root_visual);
         for c in &root.children {

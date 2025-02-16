@@ -17,10 +17,10 @@ pub struct AudioPlaybackThread {
 }
 
 impl AudioPlaybackThread {
-    pub fn start(stream: &ffmpeg_next::format::stream::Stream) -> Result<Self, anyhow::Error> {
-        let (control_sender, control_receiver) = smol::channel::unbounded();
+    pub fn start(stream: &ffmpeg_next::format::stream::Stream, sender: smol::channel::Sender<i32>) -> Result<Self, anyhow::Error> {
+        let (control_sender, control_receiver) = smol::channel::bounded(128);
 
-        let (packet_sender, packet_receiver) = smol::channel::bounded(33);
+        let (packet_sender, packet_receiver) = smol::channel::bounded(128);
 
         let decoder_context = ffmpeg_next::codec::Context::from_parameters(stream.parameters())?;
         let packet_decoder = decoder_context.decoder().audio()?;
@@ -91,7 +91,8 @@ impl AudioPlaybackThread {
                             }*/
                         }
                     }
-                })
+                });
+                sender.send_blocking(Media::EOF).unwrap_or_default();
             })?;
 
         Ok(Self { control_sender, packet_sender, receiver_thread: Some(receiver_thread) })
@@ -107,10 +108,17 @@ impl AudioPlaybackThread {
     pub async fn send_control_message(&self, message: i64) {
         self.control_sender.send(message).await.unwrap();
     }
+
+    pub fn flush_to_end(&self) {
+        while !self.packet_sender.is_empty() {
+            thread::sleep(Duration::from_nanos(1));
+        }
+    }
 }
 
 impl Drop for AudioPlaybackThread {
     fn drop(&mut self) {
+        self.flush_to_end();
         self.control_sender.close();
         if let Some(receiver_join_handle) = self.receiver_thread.take() {
             receiver_join_handle.join().unwrap_or(());
@@ -172,7 +180,7 @@ impl FFmpegToCPalForwarder {
         output_format: ffmpeg_next::util::format::sample::Sample,
         output_channel_layout: ffmpeg_next::util::channel_layout::ChannelLayout,
     ) -> Self {
-        let buffer = HeapRb::new(1024*8);
+        let buffer = HeapRb::new(1024*16);
         let (sample_producer, mut sample_consumer) = buffer.split();
 
         let cpal_stream = device

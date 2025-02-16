@@ -326,11 +326,28 @@ impl Xcb {
             border_width: 0,
             class: x::WindowClass::CopyFromParent,
             visual: self.visual_id,
-            value_list: &[x::Cw::BackPixel(bg), x::Cw::EventMask(x::EventMask::OWNER_GRAB_BUTTON | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
+            value_list: &[x::Cw::BackPixel(bg), x::Cw::EventMask(x::EventMask::EXPOSURE | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
         });
         window
     }
-    fn new_exposure_window(&self,parent:x::Window,bg:u32)->x::Window {
+    fn new_basic_window(&self,parent:x::Window,bg:u32)->x::Window {
+        let window:x::Window = self.new_id::<x::Window>();
+        self.request(&x::CreateWindow{
+            depth: self.depth,
+            wid: window,
+            parent,
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 64,
+            border_width: 0,
+            class: x::WindowClass::CopyFromParent,
+            visual: self.visual_id,
+            value_list: &[x::Cw::BackPixel(bg), x::Cw::EventMask(x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
+        });
+        window
+    }
+   /* fn new_exposure_window(&self,parent:x::Window,bg:u32)->x::Window {
         let window:x::Window = self.new_id::<x::Window>();
         self.request(&x::CreateWindow{
             depth: self.depth,
@@ -346,7 +363,7 @@ impl Xcb {
             value_list: &[x::Cw::BackPixel(bg), x::Cw::EventMask(x::EventMask::OWNER_GRAB_BUTTON | x::EventMask::EXPOSURE | x::EventMask::POINTER_MOTION | x::EventMask::KEY_PRESS | x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE)],
         });
         window
-    }
+    }*/
     fn new_gc(&self,d:Drawable,fg:u32,bg:u32) ->x::Gcontext{
         let oid = self.new_id();
         self.request(&x::CreateGc {
@@ -385,7 +402,6 @@ impl Xcb {
                     ret.width = event.width();
                     ret.height = event.height();
                     ret.code = XcbEvent::RESIZE;
-
                 }
                 X(x::Event::MotionNotify(event))=> {
                     ret.window = event.event();
@@ -399,11 +415,15 @@ impl Xcb {
                 }
                 X(x::Event::ButtonPress(event))=>{
                     ret.window = event.event();
+                    ret.x = event.event_x();
+                    ret.y = event.event_y();
                     ret.button = event.detail();
                     ret.code = XcbEvent::B_DOWN;
                 }
                 X(x::Event::ButtonRelease(event))=>{
                     ret.window = event.event();
+                    ret.x = event.event_x();
+                    ret.y = event.event_y();
                     ret.button = event.detail();
                     ret.code = XcbEvent::B_UP;
                 }
@@ -530,7 +550,7 @@ impl Xcb {
         });
     }
     pub fn fill(&self,gc:Gcontext,drawable:Drawable,b:&[u8],dst_x:i16,dst_y:i16,width:u16,height:u16){
-        self.dbg_request(&x::PutImage {
+        self.request(&x::PutImage {
             format: x::ImageFormat::ZPixmap,
             drawable,
             gc,
@@ -545,7 +565,7 @@ impl Xcb {
     }
 
     pub fn copy(&self,gc:Gcontext,src_drawable:Drawable,dst_drawable:Drawable,src_x:i16,src_y:i16,dst_x:i16,dst_y:i16,width:u16,height:u16) {
-        self.dbg_request(&x::CopyArea {
+        self.request(&x::CopyArea {
             src_drawable,
             dst_drawable,
             gc,
