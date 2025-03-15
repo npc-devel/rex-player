@@ -1,19 +1,84 @@
-root {
+@root {
     font: default 31;
+    fg: ffffff;
+    bg: 000000;
 }
 
-icon {
-    width: 64px;
-    height: 64px;
-    fg: #ff11ff;
+i {
+    w: 64px;
+    h: 64px;
     bg: transparent;
 }
 
 lbl {
-    fg: #ffffff;
-    height: 64px;
+    h: 64px;
+    bg: transparent;
 }
 
-#close {
-    fg: #ff8888;
+choices {
+    bg: 440088;
+}
+
+choices>banner  {
+    bg: 330055;
+    fg: ffffff;
+}
+
+choices>item {
+    bg: 6f00af;
+    fg: ffffff;
+    margin: 3px;
+}
+
+#app-quit {
+    fg: ff8888;
+}
+
+@stroke {
+    fg: 888888;
+}
+
+@checked {
+    bg: 8800ff;
+}
+
+@selected {
+    bg: 8800ff;
+    fg: ffffff;
+    margin: 1px;
+}
+
+@overlay {
+    each: !media,choices;
+    visible: true;
+    cursor-visible: true;
+}
+
+@overlay.passive {
+    transition: 5000;
+    each: !media,choices;
+    visible: false;
+    cursor-visible: false;
+}
+
+@mouse.down {
+    each: @target;
+    fg: ff88aa;
+}
+
+@mouse.hover {
+    each: @target;
+    bg: aa00ff;
+}
+
+@mouse.exit {
+    transition: 2000;
+    each: @target;
+    bg: transparent;
+}
+
+@mouse.passive {
+    transition: 200;
+    each: @target;
+    fg: ffffff;
 }

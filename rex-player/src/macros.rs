@@ -20,7 +20,16 @@ macro_rules! script {
         }
     }
 }
-
+#[macro_export]
+macro_rules! blank {
+    () => {
+        {
+            let temp_s = "".to_string();
+  //          println!("{temp_s}");
+            temp_s.clone()
+        }
+    }
+}
 #[macro_export]
 macro_rules! view {
     ($x:expr,$y:expr) => {
@@ -39,6 +48,19 @@ macro_rules! style {
             let temp_s = format!("{}/src/styles/{}.{}",std::env::current_dir().unwrap().as_path().to_str().unwrap(),$x,"rhss");
   //          println!("{temp_s}");
             std::fs::read_to_string(temp_s).unwrap()
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! bsf {
+    ($x:expr) => {
+        {
+            let lsp = &(std::env::home_dir().unwrap().to_str().unwrap().to_string() + "/rex-player");
+            if !std::fs::exists(lsp).unwrap() {
+                std::fs::create_dir_all(lsp).unwrap();
+            }
+            format!("{}/{}.{}",lsp,$x,"bsf")
         }
     }
 }
@@ -91,7 +113,7 @@ macro_rules! spritemap {
 
 #[macro_export]
 macro_rules! u {
-    ()=> { unwrap() }
+    ($e:expr)=> { $e.unwrap() }
 }
 
 #[macro_export]
@@ -102,4 +124,19 @@ macro_rules! idvec {
 #[macro_export]
 macro_rules! nmap {
     ()=> { HashMap::new() }
+}
+
+#[macro_export]
+macro_rules! ensure {
+    ($k:expr,$v:expr,$m:expr) => { 
+        if $m.contains_key(&$k) { $m.remove(&$k); }
+        $m.insert($k, $v); 
+    }
+}
+
+#[macro_export]
+macro_rules! clear {
+    ($k:expr,$m:expr) => { 
+        if $m.contains_key(&$k) { $m.remove(&$k); }         
+    }
 }

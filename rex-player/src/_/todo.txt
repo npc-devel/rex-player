@@ -1,27 +1,104 @@
+rustup target add x86_64-unknown-linux-musl
+export PKG_CONFIG_SYSROOT_DIR=/
+cargo build --target=x86_64-unknown-linux-musl
+
+fix---------------------------------------------------------------------------
+ SEEK
+ fix lock / unwatched next bug
+ fix broke sequence
+ S01E10 (not 1st) fix (custom sort)
+ fix choice overflow
+
+new features----------------------------------------------------------------
+voice control
+fullscreen button etc
+zoom
+ban
+fav
+cherry pick
+free text search
+
+clean up----------------------------------------------------------------------
+""+(x) in scripts
+events
+globals
+EOF/DIE
+split up rhai.rs/common.rhai
+
+improvements-----------------------------------------------------------------
+manual volume set?
+cache --
+    audio channel / auto end
+    gfx / icons
+    volume levels
+    check results (has audio/video)
+assay feature?
+fix pipewire issue (HDMI)
+element size to content
+self-peristing EVE object
+why does 1st video fail (resize)
+templated elements?
+auto next on unwatched
+smoother visual transitions
+asset cache
+interpolated transitions
+CSS driven anims
+better choices CSS
+move base path to local (startup dir?)
+move local to local
+hardware decode
+tidy code
+debug ui
+clearer osd
+better resize handle
+logging
+fix tile mode
+
+nice to have -----------------------
+musl / app image
+
+done ------------------------------
+pts based delay on audio
+project M / visualisation //
+clean die on window close <= needs merge
+nsfw startup option //
+auto volume level detect //
+double click / long press /  touch mode //
+animations //
+-- osd //
+-- click //
+-- hover //
+fix next video on bad seek//
+find main loop lag //
+fix broke audio//
+black media on exit//
+fix selected icon draw //
+//audio track
+//choice on no folder
+//unwatched
+//fix sync
+// lazy visible on media
+//style sheet
 //audio player
 //transparant icons
 //fonts
 //file meta filter
 //video frame timing
 //multithread
+//hide cursor
 
-split up rhai.rs
 skip to keyframe //
 click events
 -- mode switch //
 -- overflow free seek //
 -- skip to -60 //
-animations
--- osd
--- click
--- hover
-proper shutdown
-style sheet //
+proper shutdown //
 muted XXX & bkg audio //
-playlist
-unwatched
+playlist //
+proper icons //
 
 -- maybe
+project M
 voice control
 padding / margins
 auto size <> to content
@@ -42,6 +119,12 @@ transcode
 ? torrents
 
 apt-get *************************
+sudo apt-get install mesa-common-dev libgl1-mesa-dev libglu1-mesa-dev
+ffmpeg "build-license-version3"?
+libxcb-cursor-dev?
+git
+yasm/nasm
+
 alsa.pc -> libasound2-dev
 libavutil.pc -> libavutil-dev
 libavformat.pc -> libavformat-dev

@@ -38,7 +38,7 @@ impl Layer {
         }
     }*/
 
-    pub fn visibility(&self, is_visible:bool,ctx:&Xcb) {
+    pub fn visibility(&self, is_visible:bool,ctx:&Xcb) {         
             if is_visible {
                 for c in &self.root_visual.children {
                     c.show(ctx);
@@ -50,7 +50,7 @@ impl Layer {
             }
     }
     pub fn replace(&mut self,file:&str,ctx:&CTX,win:x::Window) {
-        println!("Replace {file}");
+   //     println!("Replace {file}");
         let raw = view!(file,"rhai");
         let processed = Self::process(&raw);
         let jdoc = "{ \"content\": [ ".to_string() + processed.as_str() + " ] }";
@@ -66,7 +66,7 @@ impl Layer {
         }
     }
    pub fn new(file:&str,ctx:&CTX,win:x::Window,bg:u32,fg:u32)->Self {
-        println!("Layer {file}");
+      //  println!("Layer {file}");
         let raw = view!(file,"rhai");
         let processed = Self::process(&raw);
         let jdoc = "{ \"content\": [ ".to_string() + processed.as_str() + " ] }";

@@ -121,6 +121,8 @@ impl Sprite {
             map.insert(i32::from_str_radix(m.0,10).unwrap(),vals);
         }
        // println!("sprite {:?}->",map);
+        ctx.drop_gc(gc);
+        ctx.drop_gc(mgc);
         Self {
             pix,
             mask,
