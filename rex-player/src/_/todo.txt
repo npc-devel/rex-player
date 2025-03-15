@@ -119,7 +119,8 @@ transcode
 ? torrents
 
 apt-get *************************
-sudo apt-get install mesa-common-dev libgl1-mesa-dev libglu1-mesa-dev
+apt install -y mesa-common-dev libgl1-mesa-dev libglu1-mesa-dev yasm nasm git libasound2-dev libavutil-dev libavformat-dev libavfilter-dev libavdevice-dev libxcb1-dev cmake ffmpeg
+
 ffmpeg "build-license-version3"?
 libxcb-cursor-dev?
 git
