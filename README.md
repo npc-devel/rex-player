@@ -23,7 +23,7 @@ Still in early stages to out of the box expects a folder structure like this:
     +--- TV\
       +--- (show-x)>\
         +--- Season 01 (otional)\
-    +--- Films\
+    +--- Film\
     +--- XXX (nsfw)\
   +--- Music\
 </pre>
