@@ -292,11 +292,11 @@ impl ViFFmpegToCPalForwarder {
             self.sample_producer.push_slice(sd);
 
             // calculate frame time
-            let frame_time = (ticks() - self.start_time).as_millis() as u32;
+            let frame_time = (ticks() - self.start_time).as_millis() as i32;
             // what do we need to hit target frame rate?
-            let delay_needed = 1000 / self.frame_rate - frame_time;
+            let delay_needed: i32 = (1000 / self.frame_rate) as i32 - frame_time;
             if delay_needed > 0  && delay_needed < 100 {
-                delay(delay_needed);
+                delay(delay_needed as u32);
             }
         })
     }

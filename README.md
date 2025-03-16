@@ -14,7 +14,7 @@ apt install -y mesa-common-dev libgl1-mesa-dev libglu1-mesa-dev nasm git libasou
 # Command line options
 -nsfw: Allow access to NSFW folder
 
-# Nodes
+# Expected folder structure (config coming soon)
 Still in early stages so out of the box expects a folder structure like this:
 
 <pre>
@@ -33,7 +33,6 @@ Config for this is in the works - for now you can easily rearrage things by edit
 You can also configure use of quad-media mode in this section.
   
 # 3rd party software used
-
 Video & audio playback:
 https://www.ffmpeg.org
 
@@ -41,5 +40,6 @@ Audio visualisation:
 https://github.com/projectM-visualizer/projectm
 
 
-
+# Support 
+Support requests please email me at: npc.dev.github@gmail.com ... i'll get back to you as soon as possible! :) 
 
