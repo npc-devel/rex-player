@@ -204,10 +204,10 @@ impl Media {
             }
 
             let iu = input.unwrap();
-            if (flags & Player::HAS_AUDIO)!=0 {
-                let dv = Self::detect_vol(cur_file.as_str());
-                if dv!=f32::NAN { Self::master_vol(dv); }
-            }
+            //if (flags & Player::HAS_AUDIO)!=0 {
+                //let dv = Self::detect_vol(cur_file.as_str());
+                //if dv!=f32::NAN { Self::master_vol(dv); }
+            //}
           //  println!("Audio: {:?}",iu.streams().best(ffmpeg_next::media::Type::Audio));
 
             let ply = Player::start(&m,drw,drb,cur_file.as_str(),iu,sett,sender,bb);
@@ -390,7 +390,7 @@ impl DomApp {
         let mut ffms: HashMap<u32,Media> = nmap!();
         let mut all: laymap!() = nmap!();
 
-        escope.push("curlib", "Videos/TV");
+        escope.push("curlib", "Music");
         escope.push("base", self.base.clone());
         let mut globals: strmap!() = nmap!();
         let globalsr = &mut globals;

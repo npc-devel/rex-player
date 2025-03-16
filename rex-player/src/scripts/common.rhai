@@ -445,7 +445,7 @@ fn on_event(eve,id,name,x,y,button) {
 fn startup(allow_nsfw,base,dev) {
     let app = new_app(base);
 
-    app.load_layer("players","media-full.view");
+    app.load_layer("players","music.view");
     if allow_nsfw {
         app.load_layer("overlay","osd.view");
     } else {
