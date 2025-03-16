@@ -4,10 +4,10 @@ fn rng_rand(lim) {
     return rnd % lim;
 }
 
-fn result_init(lib) {
+fn result_init(lib,base) {
     let ret = #{
         "_":"?",
-        "base_path": "/home/lpc/",
+        "base_path": base,
         "cur_lib": lib,
         "tablet-mode": "n"
     };
@@ -442,8 +442,8 @@ fn on_event(eve,id,name,x,y,button) {
     return eve;
 }
 
-fn startup(allow_nsfw,dev) {
-    let app = new_app();
+fn startup(allow_nsfw,base,dev) {
+    let app = new_app(base);
 
     app.load_layer("players","media-full.view");
     if allow_nsfw {

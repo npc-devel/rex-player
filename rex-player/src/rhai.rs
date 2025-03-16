@@ -11,6 +11,7 @@ use serde_json::{to_string, Serializer};
 use xcb::x::Pixmap;
 
 struct Rhai {
+    base: String,
     allow_nsfw: bool,
     scope: RScope<'static>,
     layers: laymap!()
@@ -24,7 +25,8 @@ struct DomApp {
     drb: Drawable,
     back_buffer: Pixmap,
     width: u16,
-    height: u16
+    height: u16,
+    base: String
 }
 
 #[derive(Clone,CustomType)]
@@ -245,7 +247,7 @@ impl DomApp {
     const LONG_PRESS_DUR:f32 = 0.5;
     const DBL_CLICK_DUR:f32 = 0.25;
     
-    fn new() ->Self {
+    fn new(base: String) ->Self {
         Self {
             layers: vec![],
             window: x::Window::none(),
@@ -253,7 +255,8 @@ impl DomApp {
             drb: x::Drawable::none(),
             back_buffer: x::Pixmap::none(),
             width: 1,
-            height: 1
+            height: 1,
+            base
         }
     }
     pub fn load_layer(&mut self,name: String,file: String) {
@@ -313,7 +316,7 @@ impl DomApp {
         let mut engine = &ENGINE;
         let mut eval = script.trim();
         if eval.starts_with("??=") { eval = &script[3..eval.len()-2]; }
-        let mut torun = r#"let eve = result_init(curlib);"#.to_string();
+        let mut torun = format!("let eve = result_init(curlib,base);");
         let mut torund = "".to_string();
 
         for g in globals {
@@ -388,6 +391,7 @@ impl DomApp {
         let mut all: laymap!() = nmap!();
 
         escope.push("curlib", "Videos/TV");
+        escope.push("base", self.base.clone());
         let mut globals: strmap!() = nmap!();
         let globalsr = &mut globals;
         let mut res: Vec<(String,HashMap<String,String>)> = vec![];
@@ -1066,13 +1070,13 @@ impl Rhai {
         //e.register_fn("replace_layer",DomApp::replace_layer);
         e.register_fn("setting_get",DomApp::setting_get);
         e.register_fn("setting_set",DomApp::setting_set);
-        e.register_type::<DomApp>().register_fn ("new_app", DomApp::new)
+        e.register_type::<DomApp>().register_fn ("new_app",DomApp::new)
             .register_fn("load_layer",DomApp::load_layer)
             .register_fn("main_loop",DomApp::main_loop);
         e
     }
     pub fn run(&mut self) {
-        self.exec(&format!("startup({},false);",self.allow_nsfw));
+        self.exec(&format!("startup({},\"{}\",false);",self.allow_nsfw,self.base));
     }
     pub fn exec(&mut self, mut script:&str) {
         let engine = &ENGINE;
@@ -1084,11 +1088,13 @@ impl Rhai {
 
     fn new(args: Vec<String>)-> Self {
         let mut scope = RScope::new();
+        let base = args[1].clone();
         let allow_nsfw = args.contains(&"-nsfw".to_string());
         Self {
+            base,
             allow_nsfw,
             scope,
-            layers: nmap!()
+            layers: nmap!(),
         }
     }
 }
