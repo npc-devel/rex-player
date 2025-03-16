@@ -21,8 +21,8 @@ Still in early stages to out of the box expects a folder structure like this:
 (media-root)\
   +--- Videos\
     +--- TV\
-      +--- (show-x)>\
-        +--- Season 01 (otional)\
+      +--- (show-x)\
+        +--- Season 01 (optional - used for sequential play)\
     +--- Film\
     +--- XXX (nsfw)\
   +--- Music\
