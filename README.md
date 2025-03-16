@@ -18,14 +18,14 @@ target/<build>/rex-player (path-to-media-root)
 Still in early stages so out of the box expects a folder structure like this:
 
 <pre>
-(media-root)\
-  +--- Videos\
-    +--- TV\
-      +--- (show-x)\
-        +--- Season 01 (optional - used for sequential play)\
-    +--- Film\
-    +--- XXX (nsfw)\
-  +--- Music\
+(media-root)
+  +--- Videos
+    +--- TV
+      +--- (show-x)
+        +--- Season 01 (optional - used for sequential play)
+    +--- Film
+    +--- XXX (nsfw)
+  +--- Music
 </pre>
 
 Config for this is in the works - for now you can easily rearrage things by editing: src/script/common/rhai -- lines 395 to 426
