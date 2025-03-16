@@ -17,14 +17,14 @@ target/<build>/rex-player [path-to-media-root]
 # Nodes
 Still in early stages to out of the box expects a folder structure like this:
 
-<media-root->
-+--- Videos
-  +--- TV
-    +--- <show>
-      +--- Season 01 (otional)
-  +--- Films
-  +--- XXX (nsfw)
-+--- Music
+<media-root->\
++--- Videos\
+  +--- TV\
+    +--- <show>\
+      +--- Season 01 (otional)\
+  +--- Films\
+  +--- XXX (nsfw)\
++--- Music\
 
 Config for this is in the works - for now u can easily rearrage things by editing: src/script/common/rhai -- lines 395 to 426
 
