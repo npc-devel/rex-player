@@ -15,7 +15,7 @@ target/<build>/rex-player (path-to-media-root)
 -nsfw: Allow access to NSFW folder
 
 # Nodes
-Still in early stages to out of the box expects a folder structure like this:
+Still in early stages so out of the box expects a folder structure like this:
 
 <pre>
 (media-root)\
@@ -27,7 +27,8 @@ Still in early stages to out of the box expects a folder structure like this:
     +--- XXX (nsfw)\
   +--- Music\
 </pre>
-Config for this is in the works - for now u can easily rearrage things by editing: src/script/common/rhai -- lines 395 to 426
+
+Config for this is in the works - for now you can easily rearrage things by editing: src/script/common/rhai -- lines 395 to 426
 
 You can also configure use of quad-media mode in this section.
   
