@@ -1,4 +1,4 @@
-# rex-player
+# Rex Player
 Free media center / player
 
 # Before compiling (Debian etc)
