@@ -9,7 +9,7 @@ https://www.rust-lang.org/tools/install
 apt install -y mesa-common-dev libgl1-mesa-dev libglu1-mesa-dev nasm git libasound2-dev libavutil-dev libavformat-dev libavfilter-dev libavdevice-dev libxcb1-dev cmake ffmpeg
 
 # Launching
-target/<build>/rex-player (path-to-media-root)
+(project root)\/target\/<build>\/rex-player (path-to-media-root)
 
 # Command line options
 -nsfw: Allow access to NSFW folder
