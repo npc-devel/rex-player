@@ -32,7 +32,14 @@ Config for this is in the works - for now you can easily rearrage things by edit
 
 You can also configure use of quad-media mode in this section.
   
-  
+# 3rd party software used
+
+Video & audio playback:
+https://www.ffmpeg.org
+
+Audio visualisation:
+https://github.com/projectM-visualizer/projectm
+
 
 
 
