@@ -270,12 +270,9 @@ struct ViFFmpegToCPalForwarder {
 impl ViFFmpegToCPalForwarder {
     fn vif(
         &mut self,
-        //mut p: impl RbWrite<f32> + Rb<f32> + 'static,
         audio_frame: ffmpeg_next::frame::Audio
     ) -> Pin<Box<dyn Future<Output = ()> + '_>> {
         Box::pin(async move {
-            // Audio::plane() returns the wrong slice size, so correct it by hand. See also
-            // for a fix https://github.com/zmwangx/rust-ffmpeg/pull/104.
             let mut expected_bytes =
                 audio_frame.samples() * audio_frame.channels() as usize * core::mem::size_of::<f32>();
             if expected_bytes > audio_frame.data(0).len() { expected_bytes = audio_frame.data(0).len() };
@@ -286,14 +283,10 @@ impl ViFFmpegToCPalForwarder {
                 smol::Timer::after(std::time::Duration::from_millis(16)).await;
             }
 
-            // Buffer the samples for playback
-            
             self.pro_m.pcm_add_float(sdf,2);
             self.sample_producer.push_slice(sd);
 
-            // calculate frame time
             let frame_time = (ticks() - self.start_time).as_millis() as i32;
-            // what do we need to hit target frame rate?
             let delay_needed: i32 = (1000 / self.frame_rate) as i32 - frame_time;
             if delay_needed > 0  && delay_needed < 100 {
                 delay(delay_needed as u32);
